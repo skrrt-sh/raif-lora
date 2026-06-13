@@ -1,0 +1,34 @@
+# Warm-start run (~15-18 min on M4 Max): bigger dataset, more iters, rank
+# bumped to match plan §4.2. Used to estimate where the recipe ceiling sits
+# before committing to the 8–12 hr full-corpus pass.
+
+model: ./models/llama-3.2-3b-instruct-bf16
+train: true
+fine_tune_type: lora
+
+data: ./data                   # 1,710 train + 90 eval examples (100 variations/shape)
+max_seq_length: 1024
+
+optimizer: adamw
+learning_rate: 2e-4
+batch_size: 4
+grad_accumulation_steps: 1
+num_layers: 16
+iters: 1500                    # ~3.5 epochs over 1,710 at batch 4
+seed: 0
+
+lora_parameters:
+  rank: 32                     # plan §4.2 value
+  scale: 2.0                   # alpha = 64
+  dropout: 0.05
+
+mask_prompt: true
+
+steps_per_report: 25
+steps_per_eval: 100
+val_batches: 16
+save_every: 250
+adapter_path: ./adapters/llama-3-3b-raif-sft-warm
+
+grad_checkpoint: false
+clear_cache_threshold: 0

@@ -1,0 +1,35 @@
+# Full SFT — targets the v0.5 acceptance gate.
+# Run AFTER the smoke config has confirmed loss decreases and eval samples
+# look like RAIF (not gibberish). Expect 8–12 hr on M4 Max 128 GB.
+
+model: ./models/llama-3.2-3b-instruct-bf16
+train: true
+fine_tune_type: lora
+
+data: ./data                   # regenerate at full size: variations=500 + adversarial pass
+
+max_seq_length: 2048
+
+optimizer: adamw
+learning_rate: 2e-4
+batch_size: 4
+grad_accumulation_steps: 4     # effective batch = 16
+num_layers: -1                 # all 28 blocks
+iters: 7000                    # ≈ 3 epochs over 11.5k examples at eff-batch 16
+seed: 0
+
+lora_parameters:
+  rank: 32
+  scale: 2.0                   # alpha = 64 (matches plan §4.2)
+  dropout: 0.05
+
+mask_prompt: true
+
+steps_per_report: 20
+steps_per_eval: 200
+val_batches: 50
+save_every: 500
+adapter_path: ./adapters/llama-3-3b-raif-sft
+
+grad_checkpoint: false
+clear_cache_threshold: 0

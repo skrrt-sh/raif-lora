@@ -1,0 +1,46 @@
+# 30-min smoke training on M4 Max 128 GB.
+# Goal: verify the pipeline end-to-end (load → tokenize → train → eval → save).
+# NOT goal: hit acceptance gate. That's the full config.
+
+model: ./models/llama-3.2-3b-instruct-bf16
+train: true
+fine_tune_type: lora
+
+# Dataset: directory with train.jsonl, valid.jsonl in chat-template form.
+data: ./data
+
+# Sequence length — most corpus shapes fit in <512 tokens; 1024 covers the
+# multi-line ones with headroom.
+max_seq_length: 1024
+
+# Optimizer + schedule
+optimizer: adamw
+learning_rate: 2e-4
+batch_size: 4
+grad_accumulation_steps: 1     # eff batch = 4; small enough to fit, no need to accumulate
+num_layers: 16                 # last 16 of Llama-3.2-3B's 28 blocks
+iters: 300                     # ≈ 2.2 epochs over 540 examples
+seed: 0
+
+# LoRA hyperparams (smoke values; full config doubles rank).
+# keys: omitted → mlx-lm auto-targets ALL Linear submodules per layer
+#       (q/k/v/o + gate/down/up), matching the plan §4.2 target list.
+lora_parameters:
+  rank: 16
+  scale: 2.0                   # HF-equivalent alpha = rank * scale = 32
+  dropout: 0.05
+
+# Mask the user-turn tokens in the loss — we only want to learn the
+# assistant's RAIF emission, not to re-learn how to talk to users.
+mask_prompt: true
+
+# Reporting + checkpointing
+steps_per_report: 10
+steps_per_eval: 50
+val_batches: 8                 # 27 eval examples / batch_size 4 ≈ 6 batches; cap at 8
+save_every: 100
+adapter_path: ./adapters/llama-3-3b-raif-sft-smoke
+
+# Memory hygiene (M4 Max has plenty, but harmless).
+grad_checkpoint: false
+clear_cache_threshold: 0

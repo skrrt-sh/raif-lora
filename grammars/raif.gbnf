@@ -1,0 +1,115 @@
+# RAIF v0.4 wire-format grammar (llama.cpp GBNF).
+#
+# Rewritten against prototype/src/raif.ts encode() — the encoder is ground
+# truth: every encode() output must be accepted. The decoder's repair pass
+# owns everything context-sensitive (nonce equality, table arity/prefix
+# agreement, path collisions); this grammar stays context-free.
+#
+# Design notes:
+#   - Multiline blocks use the relaxed form
+#       "<<<" hex* "\n" (line "\n")* ">>>" hex*
+#     Opener/closer nonce equality needs a backreference, which GBNF cannot
+#     express. Delegated to the decoder's repair pass.
+#   - wrapped-line (value position, closer at end of line) is deliberately
+#     the AMBIGUOUS form `"<<<" [^\n]* ">>>"`: the inner text may legally
+#     contain `>>>` (outermost-slice unwrap, e.g. `field=<<<a>>>b>>>`), so
+#     no unambiguous closer exists. llama.cpp parse-stack forks spawn only
+#     on `>` and die within 3 chars, so live-stack count stays bounded by
+#     the closer length, not the input length.
+#   - Wrapped keys and wrapped cells can never contain a `>>>` run (encoder
+#     eligibility rejects those), so they use the UNAMBIGUOUS no-`>>>`-run
+#     construction (`wrapped`), keeping forks near zero on the hot key path.
+#     Trailing 1-2 `>`s may butt against the closer (encoder emits e.g.
+#     `<<<a,>>>>` for cell value "a,>").
+#   - bare-value allows `<` anywhere except a *leading* `<<<`, forbids any
+#     `>>>` run (the encoder always wraps those), and forbids the lone `[`:
+#     that spelling is reserved for the array-literal opener, which commits
+#     to rows + a `]` closer line (kills the `key=[` false acceptance).
+#   - Keys are dot-joined segments; each segment is bare (anything except
+#     `. [ ] = :` and newline — unicode, spaces, `@`, `,` are all legal) or
+#     a wrapped `<<<…>>>` segment, with `[N]` indices after any segment.
+#   - Table header/row arity and prefix agreement are context-sensitive —
+#     not attempted. Any well-formed header line / comma-cell row is fine.
+#   - Root accepts the empty string: encode({}) emits "".
+#
+# Validate with llama.cpp:  llama-gbnf-validator raif.gbnf <doc>
+# Lint against the corpus:  bun grammars/grammar_lint.ts
+
+# Optional `<raif>` / `</raif>` framing: the generation profile (ADR-0019)
+# emits it so a missing closer marks truncation. Marker tokens are whole
+# lines; a marker glued to content is data and must not match here.
+root ::= open-marker? ( leaf ( "\n" leaf )* )? "\n"? close-marker?
+open-marker ::= "<raif>" "\n"
+close-marker ::= "</raif>" "\n"?
+
+leaf ::= table-header | kv-leaf
+kv-leaf ::= key sep leaf-value
+sep ::= "=" | ":s=" | ":n=" | ":b=" | ":t="
+
+# ── Keys: dot-joined segments, bare or wrapped, with [N] indices ───────────
+key ::= key-seg ( "." key-seg )*
+key-seg ::= ( wrapped | bare-seg ) index*
+index ::= "[" [0-9]+ "]"
+bare-seg ::= "<" "<"? ( kplain kany* )? | kplain kany*
+kany ::= [^.\[\]=:\n]
+kplain ::= [^.\[\]=:<\n]
+
+# Shared wrapped form for keys and cells: inner contains no `>>>` run.
+wrapped ::= "<<<" nc-inner ">>>"
+nc-inner ::= gt? ( nc-char gt? )*
+nc-char ::= [^>\n]
+gt ::= ">" ">"?
+
+# ── Values ─────────────────────────────────────────────────────────────────
+leaf-value ::= multiline-value | wrapped-line | array-literal | inline-object | cells-value | bare-value
+
+wrapped-line ::= "<<<" line-char* ">>>"
+line-char ::= [^\n]
+
+multiline-value ::= "<<<" hex* "\n" ( line-char* "\n" )* ">>>" hex*
+hex ::= [0-9a-fA-F]
+
+# Bare value: non-empty, single-line, no leading `<<<`, no `>>>` run, not a
+# lone `[`. Covers JSON literals (null/true/false/[]/{}/numbers) and bare
+# strings — type inference is the decoder's job.
+bare-value ::= gt bv-tail | "<" "<"? bv-after-lt? | "[" bv-more | bv-safe gt? bv-tail
+bv-after-lt ::= gt bv-tail | bv-plain gt? bv-tail
+bv-more ::= gt bv-tail | bv-anyc gt? bv-tail
+bv-tail ::= ( bv-anyc gt? )*
+bv-anyc ::= [^>\n]
+bv-plain ::= [^<>\n]
+bv-safe ::= [^<>\[\n]
+
+# ── Inline object: {k=v,k=v} — keys and cells may be wrapped ──────────────
+inline-object ::= "{" ipair ( "," ipair )* "}"
+ipair ::= ikey "=" cell
+ikey ::= wrapped | bare-ikey
+bare-ikey ::= "<" "<"? ( ikplain ikany* )? | ikplain ikany*
+ikany ::= [^.\[\]=:,{}\n]
+ikplain ::= [^.\[\]=:,{}<\n]
+cell ::= wrapped | bare-cell
+bare-cell ::= "<" "<"? ( cplain cany* )? | cplain cany*
+cany ::= [^,}\n]
+cplain ::= [^,}<\n]
+
+# ── Table mode: header `prefix::col1,col2` then comma-cell rows ───────────
+table-header ::= key "::" col ( "," col )*
+col ::= col-char+
+col-char ::= [^,:=\n]
+# Rows with >= 2 cells; a 1-cell row is just a plain/wrapped leaf value.
+# Table cells may contain `{`/`}` bare (only `,` and leading `<<<` wrap).
+cells-value ::= tcell ( "," tcell )+
+tcell ::= wrapped | bare-tcell
+bare-tcell ::= "<" "<"? ( tplain tany* )? | tplain tany*
+tany ::= [^,\n]
+tplain ::= [^,<\n]
+
+# ── Array literal: `key=[` opener commits to rows then a `]` closer ───────
+array-literal ::= "[" "\n" arr-row ( "\n" arr-row )* "\n" "]"
+arr-row ::= inline-object | wrapped-line | bare-row
+# Bare rows may contain `>>>` (array-row eligibility only excludes newlines)
+# but must not equal `[` or `]` and must not start with `<<<`.
+bare-row ::= "<" "<"? ( row-plain row-char* )? | "[" row-char+ | "]" row-char+ | row-other row-char*
+row-char ::= [^\n]
+row-plain ::= [^<\n]
+row-other ::= [^<\[\]\n]

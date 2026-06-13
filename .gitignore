@@ -1,0 +1,19 @@
+# Python env
+.venv/
+__pycache__/
+*.pyc
+.uv-cache/
+
+# Model weights / adapters (large binaries — regenerate or download)
+models/
+adapters/
+adapters-cuda/
+*.npz
+*.safetensors
+
+# Generated data + run artifacts (regenerate via src/make_data.sh)
+data/*.jsonl
+logs/
+
+# Local agent / editor state
+.claude/
