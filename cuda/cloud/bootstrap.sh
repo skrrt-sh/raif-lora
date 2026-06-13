@@ -62,10 +62,25 @@ mkdir -p "$WORKROOT"; cd "$WORKROOT"
 # ── 3. python env on the persistent volume ────────────────────────────────────
 log "3. Python venv (.venv-cuda on $WORKROOT)"
 cd "$WORKROOT/raif-lora"
-PYBIN="$(command -v python3.11 || command -v python3 || true)"
-[ -n "$PYBIN" ] || die "no python3 on the box"
-# --system-site-packages so the image's preinstalled torch is visible to the venv.
-[ -d .venv-cuda ] || "$PYBIN" -m venv --system-site-packages .venv-cuda
+deactivate 2>/dev/null || true   # leave any pre-activated venv (e.g. a failed prior run)
+# Build the venv from the interpreter that ALREADY has the image's torch. RunPod
+# images may keep torch in conda or a base venv — NOT necessarily python3.11 — so
+# probe for it; assuming the wrong interpreter makes --system-site-packages inherit
+# a torch-less site-packages (the "No module named 'torch'" failure).
+BASE_PY=""
+for cand in python python3 python3.11 python3.10; do
+  if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import torch' >/dev/null 2>&1; then
+    BASE_PY="$(command -v "$cand")"; break
+  fi
+done
+[ -n "$BASE_PY" ] || die "no python on the box has torch — pick a RunPod PyTorch template (torch >= 2.5, CUDA >= 12.1)"
+echo "base python with torch: $BASE_PY"
+# (Re)create the venv from THAT python so --system-site-packages inherits its torch.
+# Rebuild if a prior run left a venv that can't see torch.
+if [ ! -d .venv-cuda ] || ! .venv-cuda/bin/python -c 'import torch' >/dev/null 2>&1; then
+  rm -rf .venv-cuda
+  "$BASE_PY" -m venv --system-site-packages .venv-cuda
+fi
 # shellcheck disable=SC1091
 source .venv-cuda/bin/activate
 pip install -q --upgrade pip wheel
