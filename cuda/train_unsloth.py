@@ -136,6 +136,14 @@ def git_sha() -> str | None:
         return None
 
 
+# Qwen3 chat templates inject an empty `<think>\n\n</think>\n\n` block right after
+# the `<|im_start|>assistant\n` marker. We deliberately KEEP it in the training
+# target: stripping it removes the buffer between the marker and the content, which
+# breaks train_on_responses_only's token-level match of the response marker (every
+# example masks to all -100 and gets dropped → num_samples=0). So the model learns
+# to emit the empty think block then RAIF; the block is stripped at the decode
+# boundary instead (eval_core.strip_think_prefix). It's a fixed ~4-token overhead
+# and the standard way Qwen3 output is consumed.
 def build_text_field(tok):
     """Map {messages,...} -> {"text": <full chat-template string>} for SFT."""
     def fmt(batch):
@@ -220,6 +228,12 @@ def main() -> int:
         return Dataset.from_list(rows)
 
     fmt = build_text_field(tok)
+    # NOTE: do NOT pass load_from_cache_file=False here — it interacts badly with
+    # trl's downstream SFT processing and yields an empty train set (num_samples=0).
+    # The rendered `text` depends on the chat template, and the map cache is keyed on
+    # (data fingerprint, fmt hash, tokenizer), so it already invalidates when the base
+    # model or fmt changes. If you edit fmt's logic without changing its signature,
+    # clear the cache once:  rm -rf "$HF_HOME/datasets"  (or ~/.cache/huggingface/datasets)
     train_ds = load_messages(args.data / "train.jsonl").map(
         fmt, batched=True, remove_columns=["messages"])
     eval_ds = load_messages(args.data / "valid.jsonl").map(
