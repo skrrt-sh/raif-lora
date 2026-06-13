@@ -51,13 +51,23 @@ export HF_HOME="${HF_HOME:-$WORKROOT/.hf-cache}"
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$WORKROOT/.pip-cache}"
 mkdir -p "$HF_HOME" "$PIP_CACHE_DIR"
 
-# ── 2. clone repos as SIBLINGS (eval_core resolves ../raif-standard/prototype) ─
-log "2. Clone repos as siblings under $WORKROOT"
+# ── 2. clone (or UPDATE) the repos as SIBLINGS so a re-run picks up fixes ──────
+# eval_core resolves ../raif-standard/prototype, hence the sibling layout. An
+# existing checkout is hard-reset to the latest ref — otherwise a re-run keeps
+# running stale code (untracked data/ and adapters-cuda/ are left intact).
+log "2. Clone/update repos as siblings under $WORKROOT"
 mkdir -p "$WORKROOT"; cd "$WORKROOT"
-[ -d raif-lora ]     || git clone --depth 1 "$LORA_REPO"     raif-lora
-[ -d raif-standard ] || git clone --depth 1 "$STD_REPO"      raif-standard
-[ -n "$LORA_REF" ] && git -C raif-lora     checkout "$LORA_REF"
-[ -n "$STD_REF" ]  && git -C raif-standard checkout "$STD_REF"
+clone_or_update() {  # <dir> <url> <ref-or-empty>
+  local dir="$1" url="$2" ref="$3"
+  if [ -d "$dir/.git" ]; then
+    git -C "$dir" fetch --depth 1 origin "${ref:-HEAD}"
+    git -C "$dir" reset --hard FETCH_HEAD
+  else
+    git clone --depth 1 ${ref:+--branch "$ref"} "$url" "$dir"
+  fi
+}
+clone_or_update raif-lora     "$LORA_REPO" "$LORA_REF"
+clone_or_update raif-standard "$STD_REPO"  "$STD_REF"
 
 # ── 3. python env — install into the interpreter that OWNS torch ──────────────
 log "3. Locate the image's torch interpreter"
