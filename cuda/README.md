@@ -12,8 +12,9 @@ Mac, no battery worry) while the original MLX path stays fully intact.
 
 | file | role |
 |---|---|
-| `train_unsloth.py` | stage-parametrized trainer; mirrors `../configs/llama-3-3b-sft-{smoke,warm,full}.yaml` |
-| `eval_cuda.py` | parse/fidelity eval; HF generation + the shared `eval_core` meter + bun decoder |
+| `run_stage.sh` | **one-command rung**: meter → data check → train → eval+gate → export. Start here. |
+| `train_unsloth.py` | stage-parametrized trainer; mirrors `../configs/llama-3-3b-sft-{smoke,warm,full}.yaml`. Writes `run_meta.json` + `train_log.json`; `--export-tar` tars the adapter for pulling off the pod. |
+| `eval_cuda.py` | parse/fidelity eval; HF generation + the shared `eval_core` meter + bun decoder. `--gate <stage>` checks the ITERATION_PLAN gate (exit 1 on FAIL); `--out` writes results JSON. |
 | `requirements.txt` | pinned Blackwell (sm_120) stack |
 | `cloud/` | run this ladder on a rented GPU (RunPod/SSH) when the local box is down — see `cloud/README.md` |
 
@@ -39,26 +40,53 @@ Mac, no battery worry) while the original MLX path stays fully intact.
 
 ## Run the ladder
 
-From the **raif-lora root** (so `./data` and `./adapters-cuda` resolve):
+From the **raif-lora root** (so `./data` and `./adapters-cuda` resolve). The
+one-command driver runs the full rung — oracle meter, data hygiene, train,
+eval, gate, and adapter export — and stops the moment any gate fails:
 
 ```sh
-# stage 1 — smoke (~2-3 min on a 5070 Ti)
-python cuda/train_unsloth.py --stage smoke
-python cuda/eval_cuda.py     --adapter ./adapters-cuda/smoke --n 13
-
-# stage 2 — warm (~8-12 min)
-python cuda/train_unsloth.py --stage warm
-python cuda/eval_cuda.py     --adapter ./adapters-cuda/warm --n 13
-
-# stage 4 — full (~2-4 hr; 2048 seq)
-python cuda/train_unsloth.py --stage full
-python cuda/eval_cuda.py     --adapter ./adapters-cuda/full --n 13
+bash cuda/run_stage.sh smoke      # ~2-3 min on a 5070 Ti
+bash cuda/run_stage.sh warm       # ~8-12 min   (only after smoke's gate passed)
+bash cuda/run_stage.sh full       # ~2-4 hr     (2048 seq)
+# pass extra train flags after the stage, e.g.:  bash cuda/run_stage.sh full --micro-batch 2
 ```
 
+Prefer the steps by hand? They're still here, now gate- and export-aware:
+
+```sh
+python cuda/train_unsloth.py --stage smoke --export-tar
+python cuda/eval_cuda.py --adapter ./adapters-cuda/smoke --n 13 \
+  --gate smoke --out ./adapters-cuda/smoke/eval.json
+```
+
+Each run leaves three artifacts in the adapter dir:
+
+| file | what |
+|---|---|
+| `run_meta.json` | stage, hyperparams, base model, examples-seen/epochs, git sha, train seconds, final train/eval loss |
+| `train_log.json` | the full per-step loss curve (`trainer.state.log_history`) |
+| `eval.json` | per-example parse/fidelity rows + group summary + the gate verdict |
+
 Stage gates are the same as `../ITERATION_PLAN.md` (e.g. warm: valid fidelity
-≥ 75% AND holdout > smoke's). The MLX smoke run already hit **69% valid
-fidelity / 23% holdout** at 300 iters — that's the bar the CUDA smoke should
-roughly reproduce, validating the port before you trust the longer runs.
+≥ 75% AND holdout > smoke's) and are now machine-checked by `eval_cuda --gate`.
+The MLX smoke run already hit **69% valid fidelity / 23% holdout** at 300 iters
+— that's the bar the CUDA smoke should roughly reproduce, validating the port
+before you trust the longer runs.
+
+### Pull the adapter off the pod
+
+`/workspace` is wiped on terminate and the adapter is gitignored, so export it
+**before** teardown. `--export-tar` (and `run_stage.sh`) leave `<stage>.tgz`
+next to the adapter dir:
+
+```sh
+runpodctl send ./adapters-cuda/smoke.tgz      # prints a code
+# on your laptop:
+runpodctl receive <code>
+```
+
+No public IP needed. See `cloud/README.md → "Pull the adapter back"` for the
+`scp` alternative.
 
 ### If you hit a 16 GB OOM on the full run (2048 seq)
 
