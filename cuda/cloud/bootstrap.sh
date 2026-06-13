@@ -59,56 +59,51 @@ mkdir -p "$WORKROOT"; cd "$WORKROOT"
 [ -n "$LORA_REF" ] && git -C raif-lora     checkout "$LORA_REF"
 [ -n "$STD_REF" ]  && git -C raif-standard checkout "$STD_REF"
 
-# ── 3. python env on the persistent volume ────────────────────────────────────
-log "3. Python venv (.venv-cuda on $WORKROOT)"
+# ── 3. python env — install into the interpreter that OWNS torch ──────────────
+log "3. Locate the image's torch interpreter"
 cd "$WORKROOT/raif-lora"
-deactivate 2>/dev/null || true   # leave any pre-activated venv (e.g. a failed prior run)
-# Build the venv from the interpreter that ALREADY has the image's torch. RunPod
-# images may keep torch in conda or a base venv — NOT necessarily python3.11 — so
-# probe for it; assuming the wrong interpreter makes --system-site-packages inherit
-# a torch-less site-packages (the "No module named 'torch'" failure).
+deactivate 2>/dev/null || true   # leave any pre-activated venv from a failed prior run
+# Install the userland stack straight into the interpreter that already has the
+# image's torch — do NOT use a venv. A --system-site-packages venv can't "own" the
+# system torch, so pip re-pulls torch/torchvision/xformers into it (multi-GB, and
+# defeats the whole point). Installing into torch's own env lets pip treat torch/
+# triton/nccl as already satisfied and skip them. (The pod is disposable, so
+# mutating the image env is fine.)
 BASE_PY=""
-for cand in python python3 python3.11 python3.10; do
+for cand in python python3 python3.12 python3.11 python3.10; do
   if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import torch' >/dev/null 2>&1; then
     BASE_PY="$(command -v "$cand")"; break
   fi
 done
 [ -n "$BASE_PY" ] || die "no python on the box has torch — pick a RunPod PyTorch template (torch >= 2.5, CUDA >= 12.1)"
-echo "base python with torch: $BASE_PY"
-# (Re)create the venv from THAT python so --system-site-packages inherits its torch.
-# Rebuild if a prior run left a venv that can't see torch.
-if [ ! -d .venv-cuda ] || ! .venv-cuda/bin/python -c 'import torch' >/dev/null 2>&1; then
-  rm -rf .venv-cuda
-  "$BASE_PY" -m venv --system-site-packages .venv-cuda
-fi
-# shellcheck disable=SC1091
-source .venv-cuda/bin/activate
-pip install -q --upgrade pip wheel
+rm -rf .venv-cuda 2>/dev/null || true   # drop any stale venv from an older bootstrap version
+PY="$BASE_PY"; PIP="$BASE_PY -m pip"
+echo "torch interpreter: $BASE_PY"
+$PIP install -q --upgrade pip wheel
 
-log "3a. Reuse the image's torch, install userland only (no torch reinstall)"
-# The RunPod PyTorch template ships a matching torch; reinstalling it wastes paid
-# GPU time. Print what the image has and fail fast if it's older than unsloth's
-# floor (else pip would silently re-pull a multi-GB torch), then install ONLY the
-# userland stack (unsloth/trl/peft/…) from the torch-free requirements-cloud.txt.
-python - <<'PY'
+log "3a. Install userland stack into the image torch (no torch reinstall)"
+# Fail fast if the image torch is older than unsloth's floor, then install ONLY the
+# userland stack (unsloth/trl/peft/…). torch/triton/nccl already live in this env,
+# so pip recognizes them as satisfied and does not re-download them.
+"$PY" - <<'PYEOF'
 import sys, torch
 print("image torch", torch.__version__, torch.version.cuda)
 if tuple(int(x) for x in torch.__version__.split(".")[:2]) < (2, 5):
     sys.exit(f"FATAL: image torch {torch.__version__} < 2.5 — pick a newer RunPod "
              "PyTorch template (torch >= 2.5, CUDA >= 12.1) so torch isn't re-pulled.")
-PY
-pip install -r cuda/cloud/requirements-cloud.txt
+PYEOF
+$PIP install -r cuda/cloud/requirements-cloud.txt
 
 # ── 4. torch must see the GPU (we PRINT capability, never assert (12,0)) ───────
 log "4. Verify torch sees the GPU"
-python - <<'PY'
+"$PY" - <<'PYEOF'
 import torch
 print("torch:", torch.__version__, "| cuda available:", torch.cuda.is_available())
 if not torch.cuda.is_available():
     raise SystemExit("torch cannot see a CUDA GPU — driver too old for these wheels?")
 print("device:", torch.cuda.get_device_name(0),
       "| capability:", torch.cuda.get_device_capability())
-PY
+PYEOF
 
 # ── 5. bun + prototype decoder (the eval meter shells out to `bun -e`) ─────────
 log "5. bun + prototype decoder"
@@ -130,8 +125,8 @@ wc -l data/*.jsonl
 
 # ── 7. meter gate — MUST pass before trusting any training number ─────────────
 log "7. Sanity gate: eval-meter oracle tests + data containment"
-python src/test_eval_smoke.py
-python src/check_data.py
+"$PY" src/test_eval_smoke.py
+"$PY" src/check_data.py
 
 # ── 7b. run manifest — what this run was built from (for reproducibility) ──────
 mkdir -p logs
@@ -139,7 +134,7 @@ mkdir -p logs
   echo "raif-lora   $(git -C "$WORKROOT/raif-lora" rev-parse HEAD)"
   echo "raif-standard $(git -C "$WORKROOT/raif-standard" rev-parse HEAD)"
   echo "bun         $(bun --version)"
-  echo "image torch $(python -c 'import torch;print(torch.__version__,torch.version.cuda)')"
+  echo "image torch $("$PY" -c 'import torch;print(torch.__version__,torch.version.cuda)')"
 } > "logs/run-manifest-$STAGE.txt"
 
 # ── 8. train + eval one stage ─────────────────────────────────────────────────
@@ -147,18 +142,18 @@ if [ "$RUN_STAGE" = "1" ]; then
   OPTIM_FLAG=()
   [ -n "${OPTIM:-}" ] && OPTIM_FLAG=(--optim "$OPTIM")
   log "8. Train stage=$STAGE"
-  python cuda/train_unsloth.py --stage "$STAGE" "${OPTIM_FLAG[@]}" 2>&1 | tee "logs/cuda-$STAGE.log"
+  "$PY" cuda/train_unsloth.py --stage "$STAGE" "${OPTIM_FLAG[@]}" 2>&1 | tee "logs/cuda-$STAGE.log"
   log "9. Eval stage=$STAGE  (target ≈ MLX smoke: 69% valid / 23% holdout fidelity)"
-  python cuda/eval_cuda.py --adapter "./adapters-cuda/$STAGE" --n 13 2>&1 | tee "logs/cuda-$STAGE-eval.log"
+  "$PY" cuda/eval_cuda.py --adapter "./adapters-cuda/$STAGE" --n 13 2>&1 | tee "logs/cuda-$STAGE-eval.log"
   cat <<EOF
 
 Done. If the smoke numbers roughly match (≈69% valid / ≈23% holdout fidelity),
 the port is validated — climb the ladder (gates in ITERATION_PLAN.md):
 
-  source $WORKROOT/raif-lora/.venv-cuda/bin/activate
+  cd $WORKROOT/raif-lora
   export PATH="\$HOME/.bun/bin:\$PATH" HF_HOME="$HF_HOME"
-  python cuda/train_unsloth.py --stage warm && python cuda/eval_cuda.py --adapter ./adapters-cuda/warm --n 13
-  python cuda/train_unsloth.py --stage full && python cuda/eval_cuda.py --adapter ./adapters-cuda/full --n 13
+  $BASE_PY cuda/train_unsloth.py --stage warm && $BASE_PY cuda/eval_cuda.py --adapter ./adapters-cuda/warm --n 13
+  $BASE_PY cuda/train_unsloth.py --stage full && $BASE_PY cuda/eval_cuda.py --adapter ./adapters-cuda/full --n 13
 
 Save the adapter OFF the pod BEFORE teardown — /workspace is wiped on terminate
 and the adapter is gitignored. Works on any pod (no public IP needed):
@@ -168,5 +163,5 @@ See cuda/cloud/README.md → "Pull the adapter back" for the scp alternative.
 EOF
 else
   log "Setup complete (RUN_STAGE=0). To train:"
-  echo "  python cuda/train_unsloth.py --stage $STAGE && python cuda/eval_cuda.py --adapter ./adapters-cuda/$STAGE --n 13"
+  echo "  $BASE_PY cuda/train_unsloth.py --stage $STAGE && $BASE_PY cuda/eval_cuda.py --adapter ./adapters-cuda/$STAGE --n 13"
 fi
