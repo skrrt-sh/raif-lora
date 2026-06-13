@@ -23,6 +23,7 @@ are documented in cuda/README.md.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 # Stage ladder — mirrors ../configs/llama-3-3b-sft-{smoke,warm,full}.yaml.
@@ -98,7 +99,7 @@ def main() -> int:
     import torch
     from unsloth import FastLanguageModel
     from unsloth.chat_templates import train_on_responses_only
-    from datasets import load_dataset
+    from datasets import Dataset
     from trl import SFTConfig, SFTTrainer
 
     model, tok = FastLanguageModel.from_pretrained(
@@ -128,13 +129,25 @@ def main() -> int:
         layers_to_transform=layers_to_transform,
     )
 
-    ds = load_dataset("json", data_files={
-        "train": str(args.data / "train.jsonl"),
-        "valid": str(args.data / "valid.jsonl"),
-    })
+    # Read only the `messages` field. The JSONL also carries a `meta` blob whose
+    # nested fields have mixed types across rows (e.g. meta.source.label is a number
+    # in some rows, a bool in others), which makes HF's pyarrow JSON reader fail with
+    # "Column changed from number to boolean". Training never uses meta, so load the
+    # lines by hand and keep messages only — sidestepping pyarrow schema inference.
+    def load_messages(path: Path):
+        rows = []
+        with path.open() as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    rows.append({"messages": json.loads(line)["messages"]})
+        return Dataset.from_list(rows)
+
     fmt = build_text_field(tok)
-    train_ds = ds["train"].map(fmt, batched=True, remove_columns=ds["train"].column_names)
-    eval_ds = ds["valid"].map(fmt, batched=True, remove_columns=ds["valid"].column_names)
+    train_ds = load_messages(args.data / "train.jsonl").map(
+        fmt, batched=True, remove_columns=["messages"])
+    eval_ds = load_messages(args.data / "valid.jsonl").map(
+        fmt, batched=True, remove_columns=["messages"])
 
     # bf16 only where the GPU supports it (Blackwell/Ampere+); else fp16.
     use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
