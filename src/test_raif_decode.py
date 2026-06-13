@@ -96,6 +96,7 @@ CRAFTED: list[str] = [
 
 
 def _bun_available() -> bool:
+    """True when bun and the canonical TS decoder are available."""
     return (
         subprocess.run(["which", "bun"], capture_output=True).returncode == 0
         and (PROTOTYPE_DIR / "src" / "raif.ts").exists()
@@ -120,6 +121,7 @@ process.stdout.write(JSON.stringify(out));
 
 
 def bun_decode_batch(raifs: list[str]) -> list[dict]:
+    """Decode many RAIF strings in one bun invocation; returns the parsed result list."""
     import tempfile
 
     fd, tmp = tempfile.mkstemp(suffix=".json", prefix="raif_parity_")
@@ -152,11 +154,12 @@ def values_equal(a, b) -> bool:
             return False
         return all(values_equal(a[k], b[k]) for k in a)
     if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(values_equal(x, y) for x, y in zip(a, b))
+        return len(a) == len(b) and all(values_equal(x, y) for x, y in zip(a, b, strict=True))
     return a == b
 
 
 def load_corpus() -> list[str]:
+    """Load every assistant-turn RAIF string from the dataset jsonl files."""
     raifs: list[str] = []
     for name in ("valid.jsonl", "eval_holdout.jsonl", "train.jsonl"):
         p = DATA_DIR / name
@@ -175,8 +178,12 @@ def load_corpus() -> list[str]:
 def run_parity(raifs: list[str], label: str) -> int:
     """Returns the number of mismatches (0 == parity)."""
     bun = bun_decode_batch(raifs)
+    assert len(bun) == len(raifs), (
+        f"[{label}] bun output length {len(bun)} != input count {len(raifs)} "
+        f"— parity mismatches would be undercounted by zip"
+    )
     mismatches = 0
-    for i, (raif, b) in enumerate(zip(raifs, bun)):
+    for i, (raif, b) in enumerate(zip(raifs, bun, strict=True)):
         p = decode(raif)
         if p["ok"] != b["ok"]:
             mismatches += 1
@@ -195,6 +202,7 @@ def run_parity(raifs: list[str], label: str) -> int:
 
 
 def main() -> int:
+    """Run crafted + corpus parity against the canonical decoder; return the process exit code."""
     if not _bun_available():
         print("SKIP: bun and/or raif-standard prototype not available — parity not checked.")
         return 0

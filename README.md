@@ -80,7 +80,13 @@ harness has to be taught: run `decode()` and you get a JSON value back, plus a
 repair pass that recovers truncated or malformed output that plain JSON can't.
 
 This repo ships a dependency-free Python decoder so you don't need a `bun`
-subprocess in the hot path:
+subprocess in the hot path. `raif_decode.py` lives in `src/`, so put that
+directory on the import path — either copy the file into your project, or run
+with `src/` on `PYTHONPATH`:
+
+```sh
+PYTHONPATH=src python your_app.py
+```
 
 ```python
 from raif_decode import decode  # pure stdlib; no torch/bun (src/ on path)

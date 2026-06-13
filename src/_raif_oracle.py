@@ -50,6 +50,7 @@ process.stdout.write(JSON.stringify(out));
 
 
 def available() -> bool:
+    """True when bun and the raif-standard prototype decoder are both present."""
     return (
         subprocess.run(["which", "bun"], capture_output=True).returncode == 0
         and (PROTOTYPE_DIR / "src" / "raif.ts").exists()
@@ -57,6 +58,7 @@ def available() -> bool:
 
 
 def _run(spec: dict) -> list[dict]:
+    """Run the bun bridge over one spec dict and return the parsed JSON result list."""
     fd, tmp = tempfile.mkstemp(suffix=".json", prefix="raif_oracle_")
     try:
         with os.fdopen(fd, "w") as f:
@@ -109,5 +111,5 @@ def values_equal(a, b) -> bool:
             return False
         return all(values_equal(a[k], b[k]) for k in a)
     if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(values_equal(x, y) for x, y in zip(a, b))
+        return len(a) == len(b) and all(values_equal(x, y) for x, y in zip(a, b, strict=True))
     return a == b

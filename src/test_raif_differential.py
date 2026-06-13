@@ -41,7 +41,11 @@ except ImportError:
 def assert_agrees(raifs: list[str], label: str, schema=None) -> None:
     """Decode every input in both engines; raise on the first divergence."""
     js = oracle.js_decode(raifs, schema=schema)
-    for i, (raif, b) in enumerate(zip(raifs, js)):
+    assert len(js) == len(raifs), (
+        f"[{label}] oracle output length {len(js)} != input count {len(raifs)} "
+        f"— results would be silently truncated by zip"
+    )
+    for i, (raif, b) in enumerate(zip(raifs, js, strict=True)):
         p = decode(raif, schema) if schema is not None else decode(raif)
         if p["ok"] != b["ok"]:
             raise AssertionError(
@@ -59,7 +63,11 @@ def assert_agrees_pairs(pairs: list[tuple], label: str) -> None:
     """Like `assert_agrees`, but each item carries its own schema:
     `pairs = [(raif, schema|None), ...]`. One oracle call for all pairs."""
     js = oracle.js_decode_pairs(pairs)
-    for i, ((raif, schema), b) in enumerate(zip(pairs, js)):
+    assert len(js) == len(pairs), (
+        f"[{label}] oracle output length {len(js)} != pair count {len(pairs)} "
+        f"— results would be silently truncated by zip"
+    )
+    for i, ((raif, schema), b) in enumerate(zip(pairs, js, strict=True)):
         p = decode(raif, schema) if schema is not None else decode(raif)
         if p["ok"] != b["ok"]:
             raise AssertionError(
@@ -101,6 +109,7 @@ KEY_CHARS = "abcXYZ09 .[]=:,{}@-_é🎉"
 
 
 def rng_string(rng: random.Random) -> str:
+    """Random string biased toward encoder wrap-trigger shapes."""
     if rng.random() < 0.55:
         return rng.choice(TRICKY_STRINGS)
     n = rng.randint(0, 8)
@@ -108,6 +117,7 @@ def rng_string(rng: random.Random) -> str:
 
 
 def rng_key(rng: random.Random) -> str:
+    """Random object key (occasionally empty); never contains the `<<<`/`>>>` delimiters the encoder rejects."""
     if rng.random() < 0.15:
         return ""  # empty key — encoder wraps it
     n = rng.randint(1, 6)
@@ -117,6 +127,7 @@ def rng_key(rng: random.Random) -> str:
 
 
 def rng_primitive(rng: random.Random):
+    """Random JSON primitive (null/bool/int/float/string)."""
     r = rng.random()
     if r < 0.18:
         return None
@@ -130,6 +141,7 @@ def rng_primitive(rng: random.Random):
 
 
 def rng_value(rng: random.Random, depth: int):
+    """Random JSON value to the given depth, biased toward table/inline/array-eligible arrays."""
     if depth <= 0 or rng.random() < 0.45:
         return rng_primitive(rng)
     r = rng.random()
@@ -150,6 +162,7 @@ def rng_value(rng: random.Random, depth: int):
 
 
 def rng_object(rng: random.Random, depth: int) -> dict:
+    """Random JSON object to the given depth."""
     n = rng.randint(0, 5)
     obj: dict = {}
     for _ in range(n):
@@ -158,6 +171,7 @@ def rng_object(rng: random.Random, depth: int) -> dict:
 
 
 def gen_objects(seed: int, count: int, depth: int) -> list[dict]:
+    """Deterministic list of random objects for a seed."""
     rng = random.Random(seed)
     return [rng_object(rng, depth) for _ in range(count)]
 
@@ -197,6 +211,7 @@ def test_rich_objects_with_markers():
 
 
 def _valid_corpus(seed: int, count: int, depth: int, profile: str, markers=False) -> list[str]:
+    """Encode random objects via the oracle and keep the valid RAIF strings."""
     objs = gen_objects(seed, count, depth)
     enc = oracle.js_encode(objs, profile=profile, markers=markers)
     return [e["raif"] for e in enc if e["ok"]]
@@ -247,6 +262,7 @@ import re as _re  # noqa: E402
 
 
 def _mutate_line_structural(raif: str, rng: random.Random) -> str:
+    """Apply one blind line-level corruption (sep coerce, dup, delimiter/nonce mutate, garbage, shuffle, indent)."""
     lines = raif.split("\n")
     if not lines:
         return raif
@@ -306,6 +322,7 @@ def test_brace_and_relaxed_forms():
     out: list[str] = []
 
     def emit(obj: dict, indent: int) -> list[str]:
+        """Emit JSON-style multi-line brace text for an object."""
         pad = "  " * indent
         lines: list[str] = []
         for k, v in obj.items():
@@ -367,10 +384,12 @@ def test_encode_gate_unencodable_keys():
 # — schema-typed decode —
 
 def _simple_key(rng: random.Random) -> str:
+    """Short lowercase key for schema-friendly objects."""
     return "".join(rng.choice("abcdefgh") for _ in range(rng.randint(1, 4)))
 
 
 def _typed_value(rng: random.Random, depth: int):
+    """Random value for a schema-derivable object (homogeneous arrays, one nesting level)."""
     r = rng.random()
     if r < 0.18:
         return None
@@ -396,15 +415,18 @@ def _typed_value(rng: random.Random, depth: int):
 
 
 def _typed_prim(rng: random.Random):
+    """Random primitive cell for typed objects."""
     return rng.choice([None, True, False, 0, 5, -2, 1.5, "hi", "x,y", ""])
 
 
 def _gen_typed_object(rng: random.Random) -> dict:
+    """Random object with simple keys, used to derive a matching schema."""
     keys = list(dict.fromkeys(_simple_key(rng) for _ in range(rng.randint(1, 5))))
     return {k: _typed_value(rng, 2) for k in keys}
 
 
 def _elem_type(v) -> str:
+    """Schema type letter (s/n/b/o) for an array element."""
     if isinstance(v, bool):
         return "b"
     if isinstance(v, (int, float)):
@@ -415,6 +437,7 @@ def _elem_type(v) -> str:
 
 
 def _derive_schema(path: str, v, lines: list[str]) -> None:
+    """Emit schema declaration lines matching a typed object's structure."""
     if v is None:
         lines.append(f"{path}:s?")
     elif isinstance(v, bool):
@@ -440,7 +463,8 @@ def _derive_schema(path: str, v, lines: list[str]) -> None:
 
 
 def _perturb_schema(decl: str, rng: random.Random) -> str:
-    lines = [l for l in decl.split("\n") if l]
+    """Mutate a derived schema (flip type, drop/optional/add field, open node) to exercise accept/reject branches."""
+    lines = [ln for ln in decl.split("\n") if ln]
     if not lines:
         return decl
     op = rng.choice(["fliptype", "drop", "optional_all", "add_required", "to_open"])
@@ -453,7 +477,7 @@ def _perturb_schema(decl: str, rng: random.Random) -> str:
     elif op == "drop" and len(lines) > 1:
         del lines[rng.randrange(len(lines))]
     elif op == "optional_all":
-        lines = [l if l.endswith("?") else l + "?" for l in lines]
+        lines = [ln if ln.endswith("?") else ln + "?" for ln in lines]
     elif op == "add_required":
         lines.append("zzz_absent:s")
     elif op == "to_open":
@@ -473,7 +497,8 @@ def test_schema_typed_decode():
     pairs: list[tuple] = []
     for profile in ("generation", "canonical"):
         enc = oracle.js_encode(objs, profile=profile)
-        for obj, e in zip(objs, enc):
+        assert len(enc) == len(objs), "oracle encode count != object count"
+        for obj, e in zip(objs, enc, strict=True):
             if not e["ok"]:
                 continue
             raif = e["raif"]
