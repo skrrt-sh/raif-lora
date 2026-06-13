@@ -55,12 +55,13 @@ curl -fsSL https://raw.githubusercontent.com/skrrt-sh/raif-lora/main/cuda/cloud/
 ```
 
 That single command (idempotent — safe to re-run): checks the GPU, clones
-`raif-lora` + `raif-standard` as siblings under `/workspace/raif`, builds
-`.venv-cuda` reusing the image's torch (installs the userland stack from
-`cuda/cloud/requirements-cloud.txt`), installs **bun** + the prototype
-decoder, regenerates the gitignored data (`make_data.sh full`, seed 0 → the
-same 1235/65/500 split), runs the **eval-meter oracle gate**, then trains +
-evals the **smoke** stage and prints the numbers to compare against MLX.
+`raif-lora` + `raif-standard` as siblings under `/workspace/raif`, installs the
+userland stack (`cuda/cloud/requirements-cloud.txt`) **into the image's torch
+interpreter** — no venv, so pip reuses the preinstalled torch instead of
+re-pulling it — installs **bun** + the prototype decoder, regenerates the
+gitignored data (`make_data.sh full`, seed 0 → the same 1235/65/500 split),
+runs the **eval-meter oracle gate**, then trains + evals the **smoke** stage
+and prints the numbers to compare against MLX.
 
 Knobs:
 
@@ -75,7 +76,7 @@ curl -fsSL …/bootstrap.sh | OPTIM=adamw_torch bash  # if bitsandbytes errors
 After smoke validates, from `/workspace/raif/raif-lora`:
 
 ```sh
-source .venv-cuda/bin/activate
+# no venv — the stack is installed into the image's python (`python` already has it)
 export PATH="$HOME/.bun/bin:$PATH" HF_HOME=/workspace/raif/.hf-cache
 
 # stage 2 — warm. Gate: valid fidelity ≥ 75% AND holdout > smoke's 23%
