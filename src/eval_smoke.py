@@ -24,16 +24,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from eval_core import (
-    eval_group, load_examples, sample_examples,
-    evaluate_gate, print_gate, write_results_json,
-)
+from eval_core import add_common_eval_args, run_eval
 
 MODEL_PATH = Path("./models/llama-3.2-3b-instruct-bf16")
-VALID_FILE = Path("./data/valid.jsonl")
-HOLDOUT_FILE = Path("./data/eval_holdout.jsonl")
-
-N_SAMPLES = 10
 
 
 def select_adapter_checkpoint(adapter_dir: Path, label: str) -> Path:
@@ -63,20 +56,7 @@ def main() -> int:
                    help="path to adapter dir (e.g. ./adapters/llama-3-3b-raif-sft-warm)")
     p.add_argument("--checkpoint", default="latest",
                    help="'latest' or an iter number like '1500'")
-    p.add_argument("--n", type=int, default=N_SAMPLES,
-                   help=f"examples to sample per group (default {N_SAMPLES})")
-    p.add_argument("--seed", type=int, default=0,
-                   help="RNG seed for example sampling (default 0)")
-    p.add_argument("--valid", type=Path, default=VALID_FILE,
-                   help=f"in-training-shape eval file (default {VALID_FILE})")
-    p.add_argument("--holdout", type=Path, default=HOLDOUT_FILE,
-                   help=f"held-out-shape eval file (default {HOLDOUT_FILE})")
-    p.add_argument("--out", type=Path, default=None,
-                   help="write full results JSON here (per-example rows + summary + gate)")
-    p.add_argument("--gate", default=None,
-                   choices=["smoke", "warm", "mid", "full"],
-                   help="check this stage's ITERATION_PLAN gate and print PASS/FAIL; "
-                        "exit nonzero on FAIL")
+    add_common_eval_args(p)
     args = p.parse_args()
 
     # Heavy imports deferred so `--help` works without model deps loaded.
@@ -90,48 +70,9 @@ def main() -> int:
     model = load_adapters(model, str(adapter_dir))
     model.eval()
 
-    groups = [
-        ("valid (in-training shapes)", args.valid),
-        ("holdout (withheld shapes)", args.holdout),
-    ]
-    results = []
-    for name, path in groups:
-        examples = sample_examples(load_examples(path), args.n, args.seed)
-        results.append((name, eval_group(name, examples, model, tok, generate)))
-
-    print("── summary ──")
-    for name, stats in results:
-        if stats is None or stats["n"] == 0:
-            print(f"{name:30s} (no scored examples)")
-            continue
-        print(f"{name:30s} parse {stats['parse']}/{stats['n']} "
-              f"({100*stats['parse']/stats['n']:.0f}%)  "
-              f"fidelity {stats['fidelity']}/{stats['n']} "
-              f"({100*stats['fidelity']/stats['n']:.0f}%)  "
-              f"skipped {stats['skipped']}")
-
-    valid_stats = results[0][1]
-    holdout_stats = results[1][1]
-    gate = None
-    if args.gate:
-        gate = evaluate_gate(args.gate, valid_stats, holdout_stats)
-        print()
-        print_gate(gate)
-
-    if args.out:
-        write_results_json(args.out, {
-            "stack": "mlx",
-            "adapter": str(args.adapter),
-            "checkpoint": args.checkpoint,
-            "n_per_group": args.n,
-            "seed": args.seed,
-            "groups": {name: stats for name, stats in results},
-            "gate": gate,
-        })
-
-    if gate and gate.get("passed") is False:
-        return 1
-    return 0
+    return run_eval(args, model, tok, generate, stack="mlx",
+                    extra_payload={"adapter": str(args.adapter),
+                                   "checkpoint": args.checkpoint})
 
 
 if __name__ == "__main__":

@@ -16,7 +16,10 @@ data_dir="$(pwd)/data"
 proto="../raif-standard/prototype"
 
 mode="${1:-smoke}"
-holdout="${2:-multiline_body,pathological_keys,large_table,deep_array_literal,flat_inline_object}"
+# Default holdout list is derived from the single source of truth in
+# src/check_data.py (HOLDOUT_SHAPES) so the generator and the validator never drift.
+# Pass a CSV as $2 to override, or `none` to disable holdout.
+holdout="${2:-$(python3 -c 'import sys; sys.path.insert(0, "src"); from check_data import HOLDOUT_SHAPES; print(",".join(sorted(HOLDOUT_SHAPES)))')}"
 
 case "$mode" in
   smoke)

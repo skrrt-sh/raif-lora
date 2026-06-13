@@ -10,19 +10,13 @@ Not a test module itself (leading underscore keeps pytest from collecting it).
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-import tempfile
-from pathlib import Path
+from raif_bun import available, run_bridge
 
-PROTOTYPE_DIR = (
-    Path(__file__).resolve().parent.parent.parent / "raif-standard" / "prototype"
-)
+__all__ = ["available", "js_encode", "js_decode", "js_decode_pairs", "values_equal"]
 
 _BRIDGE = """
 import { encode, decode } from "./src/raif.ts";
-const spec = JSON.parse(await Bun.file(process.env.SPEC).text());
+const spec = JSON.parse(await Bun.file(process.env.RAIF_BRIDGE_INPUT).text());
 let out;
 if (spec.op === "encode") {
   out = spec.items.map((o) => {
@@ -49,32 +43,9 @@ process.stdout.write(JSON.stringify(out));
 """
 
 
-def available() -> bool:
-    """True when bun and the raif-standard prototype decoder are both present."""
-    return (
-        subprocess.run(["which", "bun"], capture_output=True).returncode == 0
-        and (PROTOTYPE_DIR / "src" / "raif.ts").exists()
-    )
-
-
 def _run(spec: dict) -> list[dict]:
     """Run the bun bridge over one spec dict and return the parsed JSON result list."""
-    fd, tmp = tempfile.mkstemp(suffix=".json", prefix="raif_oracle_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(spec, f)
-        res = subprocess.run(
-            ["bun", "-e", _BRIDGE],
-            capture_output=True,
-            cwd=PROTOTYPE_DIR,
-            timeout=max(120, len(spec["items"]) // 50 + 60),
-            env={**os.environ, "SPEC": tmp},
-        )
-    finally:
-        os.unlink(tmp)
-    if res.returncode != 0:
-        raise RuntimeError(f"bun bridge failed: {res.stderr.decode('utf-8', 'replace')[:1000]}")
-    return json.loads(res.stdout.decode("utf-8"))
+    return run_bridge(_BRIDGE, spec, timeout=max(120, len(spec["items"]) // 50 + 60))
 
 
 def js_encode(objs: list, profile: str = "canonical", markers: bool = False) -> list[dict]:

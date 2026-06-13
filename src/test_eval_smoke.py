@@ -12,10 +12,13 @@ style on purpose — the meter includes the decode path).
 
 from __future__ import annotations
 
+import argparse
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
-import eval_smoke
+import eval_core
 
 
 class FakeTok:
@@ -36,8 +39,8 @@ def make_generate(outputs: list[str]):
 
 
 def stratified_examples(n: int = 6) -> list[dict]:
-    examples = eval_smoke.load_examples(Path("./data/valid.jsonl"))
-    return eval_smoke.sample_examples(examples, n, seed=0)
+    examples = eval_core.load_examples(Path("./data/valid.jsonl"))
+    return eval_core.sample_examples(examples, n, seed=0)
 
 
 class MeterOracle(unittest.TestCase):
@@ -47,7 +50,7 @@ class MeterOracle(unittest.TestCase):
             ex["messages"][1]["content"] + "\nzzz_oracle=injected by meter test"
             for ex in examples
         ]
-        stats = eval_smoke.eval_group(
+        stats = eval_core.eval_group(
             "oracle-corrupt", examples, None, FakeTok(), make_generate(outputs)
         )
         self.assertEqual(stats["parse"], stats["n"])
@@ -56,7 +59,7 @@ class MeterOracle(unittest.TestCase):
     def test_grammar_garbage_fails_parse(self):
         examples = stratified_examples(3)
         outputs = ["I cannot help with that request" for _ in examples]
-        stats = eval_smoke.eval_group(
+        stats = eval_core.eval_group(
             "oracle-garbage", examples, None, FakeTok(), make_generate(outputs)
         )
         self.assertEqual(stats["parse"], 0)
@@ -72,24 +75,79 @@ class MeterOracle(unittest.TestCase):
             "I'm sorry, here is your object: it has three fields."
             for _ in examples
         ]
-        stats = eval_smoke.eval_group(
+        stats = eval_core.eval_group(
             "oracle-refusal", examples, None, FakeTok(), make_generate(outputs)
         )
         self.assertEqual(stats["parse"], stats["n"])
         self.assertEqual(stats["fidelity"], 0)
         self.assertEqual(stats["repaired"], stats["n"])
 
+    def test_think_prefix_is_stripped_before_decode(self):
+        # Qwen3 bases emit an empty `<think>…</think>` block before the answer.
+        # RAIF lives after it, so the shared meter must strip the block at the
+        # decode boundary — otherwise every Qwen sample fails parse. A no-op for
+        # outputs without the block (Llama, Qwen2.5).
+        examples = stratified_examples(3)
+        outputs = [
+            "<think>\n\n</think>\n\n" + ex["messages"][1]["content"]
+            for ex in examples
+        ]
+        stats = eval_core.eval_group(
+            "oracle-think", examples, None, FakeTok(), make_generate(outputs)
+        )
+        self.assertEqual(stats["parse"], stats["n"])
+        self.assertEqual(stats["fidelity"], stats["n"])
+
     def test_perfect_echo_scores_full_parse_and_fidelity(self):
         examples = stratified_examples(6)
         self.assertGreater(len(examples), 0, "valid.jsonl is empty")
         outputs = [ex["messages"][1]["content"] for ex in examples]
-        stats = eval_smoke.eval_group(
+        stats = eval_core.eval_group(
             "oracle-perfect", examples, None, FakeTok(), make_generate(outputs)
         )
         self.assertEqual(stats["skipped"], 0)
         self.assertEqual(stats["n"], len(examples))
         self.assertEqual(stats["parse"], stats["n"])
         self.assertEqual(stats["fidelity"], stats["n"])
+
+
+class EvalDriver(unittest.TestCase):
+    """The shared CLI driver both stacks call. Model loading is stack glue; the
+    driver's own logic is the gate→exit-code contract and the results payload."""
+
+    def _args(self, **over):
+        base = dict(
+            n=2, seed=0,
+            valid=Path("/nonexistent_valid.jsonl"),
+            holdout=Path("/nonexistent_holdout.jsonl"),
+            out=None, gate=None,
+        )
+        base.update(over)
+        return argparse.Namespace(**base)
+
+    def test_no_gate_returns_zero(self):
+        code = eval_core.run_eval(
+            self._args(), None, FakeTok(), make_generate([]), stack="test"
+        )
+        self.assertEqual(code, 0)
+
+    def test_failing_gate_returns_one(self):
+        # No data → no metrics → the gate cannot pass → nonzero exit.
+        code = eval_core.run_eval(
+            self._args(gate="smoke"), None, FakeTok(), make_generate([]), stack="test"
+        )
+        self.assertEqual(code, 1)
+
+    def test_writes_results_payload_with_stack(self):
+        out = Path(self.enterContext(tempfile.TemporaryDirectory())) / "r.json"
+        eval_core.run_eval(
+            self._args(out=out), None, FakeTok(), make_generate([]),
+            stack="cuda", extra_payload={"adapter": "./adapters-cuda/x"},
+        )
+        payload = json.loads(out.read_text())
+        self.assertEqual(payload["stack"], "cuda")
+        self.assertEqual(payload["adapter"], "./adapters-cuda/x")
+        self.assertIn("groups", payload)
 
 
 if __name__ == "__main__":
