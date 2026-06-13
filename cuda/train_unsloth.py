@@ -45,10 +45,26 @@ STAGES = {
 TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj",
                   "gate_proj", "up_proj", "down_proj"]
 
-# Llama-3.2 chat-template part markers — used to mask the prompt tokens so loss
-# falls only on the assistant's RAIF emission (the MLX `mask_prompt: true`).
-INSTRUCTION_PART = "<|start_header_id|>user<|end_header_id|>\n\n"
-RESPONSE_PART = "<|start_header_id|>assistant<|end_header_id|>\n\n"
+# Chat-template part markers — used to mask the prompt tokens so loss falls only
+# on the assistant's RAIF emission (the MLX `mask_prompt: true`). These are
+# template-family specific: Llama-3.x uses header-id markers, Qwen2.5 (and other
+# ChatML bases) use <|im_start|>role\n. `chat_markers()` picks the right pair from
+# the base-model id; --instruction-part/--response-part override it explicitly.
+CHAT_MARKERS = {
+    "llama": ("<|start_header_id|>user<|end_header_id|>\n\n",
+              "<|start_header_id|>assistant<|end_header_id|>\n\n"),
+    "qwen":  ("<|im_start|>user\n",
+              "<|im_start|>assistant\n"),
+}
+
+
+def chat_markers(model_id: str) -> tuple[str, str]:
+    """Pick (instruction_part, response_part) for the base model's chat template.
+    Defaults to Llama; switches to ChatML for Qwen/ChatML-family bases."""
+    mid = model_id.lower()
+    if "qwen" in mid or "chatml" in mid:
+        return CHAT_MARKERS["qwen"]
+    return CHAT_MARKERS["llama"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,6 +94,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora-dropout", type=float, default=0.0,
                    help="LoRA dropout (default 0 keeps unsloth's fused fast path; >0 "
                         "regularizes but disables the fused kernels, so training is slower)")
+    p.add_argument("--instruction-part", default=None,
+                   help="chat-template marker that precedes the user turn (overrides "
+                        "the auto-detected Llama/Qwen default; for prompt masking)")
+    p.add_argument("--response-part", default=None,
+                   help="chat-template marker that precedes the assistant turn "
+                        "(overrides the auto-detected Llama/Qwen default)")
     p.add_argument("--export-tar", action="store_true",
                    help="after saving, tar the adapter dir to <out>.tgz for pulling "
                         "off the pod (/workspace is wiped on terminate)")
@@ -235,8 +257,14 @@ def main() -> int:
     trainer = SFTTrainer(model=model, processing_class=tok,
                          train_dataset=train_ds, eval_dataset=eval_ds, args=sft)
     # Mask everything but the assistant turn — the MLX `mask_prompt: true`.
+    # Markers are template-family specific (Llama header-id vs Qwen/ChatML);
+    # auto-detect from the base id, with explicit CLI overrides.
+    auto_instr, auto_resp = chat_markers(args.model)
+    instruction_part = args.instruction_part or auto_instr
+    response_part = args.response_part or auto_resp
+    print(f"[mask] instruction_part={instruction_part!r} response_part={response_part!r}")
     trainer = train_on_responses_only(
-        trainer, instruction_part=INSTRUCTION_PART, response_part=RESPONSE_PART)
+        trainer, instruction_part=instruction_part, response_part=response_part)
 
     t0 = time.time()
     train_result = trainer.train()
@@ -266,6 +294,7 @@ def main() -> int:
             "grad_accum": grad_accum, "max_steps": max_steps,
             "learning_rate": args.lr, "lr_scheduler": "constant",
             "optim": args.optim, "lora_dropout": args.lora_dropout,
+            "instruction_part": instruction_part, "response_part": response_part,
         },
         "data": {**data_counts, "examples_seen": examples_seen,
                  "epochs": round(examples_seen / data_counts["train"], 3),

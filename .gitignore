@@ -11,8 +11,10 @@ adapters-cuda/
 *.npz
 *.safetensors
 
-# Generated data + run artifacts (regenerate via src/make_data.sh)
-data/*.jsonl
+# Generated data + run artifacts (regenerate via src/make_data.sh).
+# Ignore the whole tree, not just top-level *.jsonl — subdirs like
+# data/archive/ and data/_pre_overhaul/ hold large local corpora/tarballs too.
+data/
 logs/
 
 # Local agent / editor state
