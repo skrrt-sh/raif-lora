@@ -112,6 +112,75 @@ def canon(obj: object) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
 
+# ── Stage gates (mirror ../ITERATION_PLAN.md "Stage gates") ──────────────────
+# Numeric, eval-checkable thresholds expressed as fractions (0..1). `None` means
+# "no constraint from this metric at this stage". Non-numeric gate clauses
+# (token ratio, "multi-line shapes start parsing", "no held-out regression") are
+# checked outside the eval and noted by the caller.
+STAGE_GATES: dict[str, dict] = {
+    "smoke": {"valid_fidelity": 0.50},
+    "warm":  {"valid_fidelity": 0.75, "holdout_fidelity": 0.2301},  # "> smoke's 23%"
+    "mid":   {"valid_parse": 0.95},
+    "full":  {"valid_parse": 0.98, "valid_fidelity": 0.95,
+              "holdout_parse": 0.98, "holdout_fidelity": 0.95},
+}
+
+
+def _frac(stats: dict | None, key: str) -> float | None:
+    if not stats or stats.get("n", 0) == 0:
+        return None
+    return stats[key] / stats["n"]
+
+
+def evaluate_gate(stage: str, valid: dict | None, holdout: dict | None) -> dict:
+    """Check this stage's numeric gate against scored groups. Returns
+    {stage, passed, checks:[{metric, threshold, actual, ok}], note}."""
+    gate = STAGE_GATES.get(stage)
+    if gate is None:
+        return {"stage": stage, "passed": None, "checks": [],
+                "note": f"no gate defined for stage {stage!r}"}
+    actual = {
+        "valid_parse": _frac(valid, "parse"),
+        "valid_fidelity": _frac(valid, "fidelity"),
+        "holdout_parse": _frac(holdout, "parse"),
+        "holdout_fidelity": _frac(holdout, "fidelity"),
+    }
+    checks = []
+    passed = True
+    for metric, threshold in gate.items():
+        a = actual.get(metric)
+        ok = a is not None and a >= threshold
+        passed = passed and ok
+        checks.append({"metric": metric, "threshold": round(threshold, 4),
+                       "actual": None if a is None else round(a, 4), "ok": ok})
+    note = ("full-stage acceptance also requires ≤0.92× JSON tokens (bun bench) "
+            "and no held-out regression — not checked here.") if stage == "full" else ""
+    return {"stage": stage, "passed": passed, "checks": checks, "note": note}
+
+
+def print_gate(gate: dict) -> None:
+    if gate.get("passed") is None:
+        print(f"gate: {gate.get('note', '(none)')}")
+        return
+    print(f"── gate [{gate['stage']}] ──")
+    for c in gate["checks"]:
+        mark = "✓" if c["ok"] else "✗"
+        act = "n/a" if c["actual"] is None else f"{100*c['actual']:.0f}%"
+        print(f"  {mark} {c['metric']:18s} ≥ {100*c['threshold']:.0f}%   actual {act}")
+    print(f"  → {'PASS' if gate['passed'] else 'FAIL'}"
+          + (f"   ({gate['note']})" if gate.get("note") else ""))
+
+
+def write_results_json(path, payload: dict) -> None:
+    """Write the eval payload as pretty JSON (created parent dirs)."""
+    import json as _json
+    from pathlib import Path as _Path
+    p = _Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(_json.dumps(payload, indent=2, ensure_ascii=False))
+    print(f"\nWrote eval results to {p}")
+
+
 def eval_group(
     name: str, examples: list[dict], model, tok, generate, max_tokens: int = MAX_TOKENS
 ) -> dict | None:
@@ -152,31 +221,43 @@ def eval_group(
     parse_ok = 0
     fidelity_ok = 0
     repaired = 0
+    rows: list[dict] = []  # per-example detail, for JSON export
     for i, ((ex, expected_json), out, res) in enumerate(zip(kept, outputs, decoded)):
         shape = ex.get("meta", {}).get("shape", "?")
         task = ex.get("meta", {}).get("task", "?")
         ok_p = bool(res.get("ok"))
         parse_mark = "✓" if ok_p else "✗"
         fid_mark = "—"
+        fid_pass = False
+        was_repaired = bool(ok_p and res.get("repairs", 0))
         if ok_p:
             parse_ok += 1
-            if res.get("repairs", 0):
+            if was_repaired:
                 repaired += 1
             if canon(res.get("value")) == canon(expected_json):
                 fidelity_ok += 1
+                fid_pass = True
                 fid_mark = "✓"
             else:
                 fid_mark = "✗"
+        err = res.get("error", "") or ""
         print(f"[{i}] {shape:30s} ({task:9s}) parse {parse_mark} fidelity {fid_mark}")
         if not ok_p:
-            err = res.get("error", "")
             print(f"      error: {err.splitlines()[0] if err else '(empty)'}")
             print(f"      model output (first 200 chars): {out[:200]!r}")
+        rows.append({
+            "shape": shape, "task": task, "parse": ok_p, "fidelity": fid_pass,
+            "repaired": was_repaired,
+            "error": (err.splitlines()[0] if err else None) if not ok_p else None,
+            # Keep the output snippet only for failures, to keep the JSON small.
+            "output": out[:400] if not (ok_p and fid_pass) else None,
+        })
 
     n = len(kept)  # skipped examples are excluded from the denominator
     if n == 0:
         print(f"[{name}] all {skipped} examples skipped — nothing to score\n")
-        return {"parse": 0, "fidelity": 0, "repaired": 0, "n": 0, "skipped": skipped}
+        return {"parse": 0, "fidelity": 0, "repaired": 0, "n": 0,
+                "skipped": skipped, "rows": rows}
     print(
         f"\n[{name}] parse:    {parse_ok}/{n} ({100*parse_ok/n:.0f}%)"
         f" — {repaired} via repair\n"
@@ -184,4 +265,4 @@ def eval_group(
         f"[{name}] skipped:  {skipped} (excluded from denominator)\n"
     )
     return {"parse": parse_ok, "fidelity": fidelity_ok, "repaired": repaired,
-            "n": n, "skipped": skipped}
+            "n": n, "skipped": skipped, "rows": rows}

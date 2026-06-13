@@ -1,73 +1,138 @@
-# raif-lora
+<p align="center">
+  <img src="assets/banner.jpg" alt="RAIF" width="640">
+</p>
 
-![base](https://img.shields.io/badge/base-Llama--3.2--3B-blue)
-![stacks](https://img.shields.io/badge/stacks-MLX%20%2B%20unsloth-black)
-![smoke](https://img.shields.io/badge/smoke%20fidelity-69%25-brightgreen)
-![target](https://img.shields.io/badge/gate-98%25%20parse%20%2F%2095%25%20fid-orange)
+<h1 align="center">raif-lora</h1>
 
-LoRA fine-tune that teaches **Llama-3.2-3B** to natively emit
-[RAIF](https://github.com/skrrt-sh/raif-standard) instead of JSON — bringing
-RAIF's token savings and truncation recovery to cheap/local inference. RAIF is
-fluent on ~20B+ models but marginal below 8B; this closes that gap.
+<p align="center"><strong>A LoRA fine-tune that teaches Llama-3.2-3B to emit RAIF instead of JSON</strong></p>
 
-Two interchangeable training stacks, same data, same eval meter:
+<p align="center">
+  Brings <a href="https://github.com/skrrt-sh/raif-standard">RAIF</a>'s token savings and<br>
+  truncation recovery to small, local, and self-hosted inference.
+</p>
 
-- **MLX** (`configs/` + `src/`) — Apple Silicon, path of record.
-- **unsloth/CUDA** (`cuda/`) — NVIDIA mirror, hyperparameter parity, ~3–4× faster (built for RTX 5070 Ti / Blackwell).
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
+  <img src="https://img.shields.io/badge/base-Llama--3.2--3B-blue" alt="Base: Llama-3.2-3B">
+  <img src="https://img.shields.io/badge/acceptance%20gate-PASS-brightgreen" alt="Acceptance gate: PASS">
+  <a href="https://huggingface.co/skrrt-sh/raif-llama-3.2-3b-lora"><img src="https://img.shields.io/badge/model-Hugging%20Face-ffb000" alt="Model on Hugging Face"></a>
+</p>
 
-## Result so far
+---
 
-A 300-iter smoke run hits **69% fidelity** on in-training shapes (23% held-out),
-up from 6%/0% on the old data — the prior "0% fidelity" wall was a data artifact
-(no values in prompts), not a recipe limit. Remaining misses are the
-newline-bounded-delimiter shapes. Full ramp and gates: [`ITERATION_PLAN.md`](./ITERATION_PLAN.md).
+RAIF is fluent on large (~20B+) models but marginal below 8B — small models haven't
+seen the format and fall back to malformed JSON. This adapter closes that gap: it
+teaches **Llama-3.2-3B** to emit RAIF natively, so the format's token savings and
+self-repair reach the model tier people actually run locally.
 
-## Features
+The trained artifact is a LoRA adapter (~195 MB), published on Hugging Face:
 
-- **Two stacks, one ladder** — identical smoke→warm→full stages + gates on MLX or NVIDIA; comparable numbers.
-- **Trustworthy meter** — parse/fidelity is pinned by oracle tests (`src/test_eval_smoke.py`) and decodes through RAIF's *real* canonical decoder, not a reimplementation.
-- **Gated ramp** — 50 → 300 → 1500 → 7000 iters, each with a go/no-go fidelity gate, so long runs never start until short ones earn it.
-- **Reproducible data** — synthetic RAIF data regenerates from the spec corpus; nothing hand-labeled.
+> **[skrrt-sh/raif-llama-3.2-3b-lora](https://huggingface.co/skrrt-sh/raif-llama-3.2-3b-lora)**
 
-## Usage
+## Results
+
+`parse` = output decodes; `fidelity` = byte-exact JSON round-trip. The published
+adapter (`full-reg`) clears all four gate criteria, evaluated at n=64:
+
+| group | parse | fidelity |
+|---|---:|---:|
+| valid (held-out split of in-training shapes) | **100%** | **100%** |
+| holdout (shapes withheld from training entirely) | **100%** | **95%** |
+
+Token cost: **−14% vs minified JSON**, inside the −8% acceptance bar.
+
+### How it got there
+
+Two levers moved the numbers, tracked stage by stage:
+
+| stage | lr | dropout | valid fid | holdout fid |
+|---|---:|---:|---:|---:|
+| baseline (synthetic-only) | 2e-4 | 0 | 69% | 23% |
+| + real-data augmentation | 2e-4 | 0 | 94% | 81% |
+| + regularization (**published**) | 1e-4 | 0.05 | **100%** | **95–100%** |
+
+1. **Data** — fixing mechanism coverage in the synthetic corpus and adding real
+   tool-call arguments from [glaive-function-calling-v2](https://huggingface.co/datasets/glaiveai/glaive-function-calling-v2)
+   took holdout fidelity from 23% to 81%.
+2. **Regularization** — lowering the learning rate and adding LoRA dropout fixed
+   the mild over-fit (held-out parse had dipped to 88%) and lifted everything to
+   the gate.
+
+The exact winning configuration, hyperparameters, and reproduction commands are in
+[**`RECIPE.md`**](./RECIPE.md).
+
+## Use the adapter
+
+```python
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+base = AutoModelForCausalLM.from_pretrained("unsloth/Llama-3.2-3B-Instruct")
+tok = AutoTokenizer.from_pretrained("skrrt-sh/raif-llama-3.2-3b-lora")
+model = PeftModel.from_pretrained(base, "skrrt-sh/raif-llama-3.2-3b-lora")
+```
+
+## Training stacks
+
+Two interchangeable stacks share the same data and the same eval meter. The
+published adapter was trained on the CUDA stack.
+
+| stack | location | hardware | notes |
+|---|---|---|---|
+| unsloth / CUDA | `cuda/` | NVIDIA | produced the published adapter; ~3–4× faster |
+| MLX | `configs/` + `src/` | Apple Silicon | hyperparameter parity, comparable numbers |
+
+## Reproduce
 
 > Clone [`raif-standard`](https://github.com/skrrt-sh/raif-standard) as a sibling
-> and run `bun install` in its `prototype/` — the eval shells out to its decoder.
+> and run `bun install` in its `prototype/` — the eval shells out to RAIF's real
+> canonical decoder, not a reimplementation.
+
+**NVIDIA (unsloth):**
+
+```sh
+pip install -r cuda/requirements.txt   # Blackwell notes in cuda/README.md
+python cuda/train_unsloth.py --stage smoke
+python cuda/eval_cuda.py --adapter ./adapters-cuda/smoke --n 13
+```
 
 **Apple Silicon (MLX):**
 
 ```sh
 uv sync
 src/make_data.sh smoke
-uv run python src/test_eval_smoke.py     # meter green first
+uv run python src/test_eval_smoke.py   # meter green first
 uv run mlx_lm.lora --config configs/llama-3-3b-sft-smoke.yaml
-uv run python src/eval_smoke.py --adapter ./adapters/llama-3-3b-raif-sft-smoke --n 13
 ```
 
-**NVIDIA (unsloth):**
-
-```sh
-pip install -r cuda/requirements.txt     # Blackwell notes in cuda/README.md
-python cuda/train_unsloth.py --stage smoke
-python cuda/eval_cuda.py     --adapter ./adapters-cuda/smoke --n 13
-```
-
-Then climb the ladder: `--stage warm`, `--stage full`. Don't advance a stage
-until its gate in [`ITERATION_PLAN.md`](./ITERATION_PLAN.md) passes.
-
-## Layout
-
-```
-ITERATION_PLAN.md   staged ramp + gates       NOTES.md   loss curves, findings
-configs/            MLX LoRA configs          cuda/      unsloth mirror + setup
-src/eval_core.py    shared parse/fidelity meter (framework-free)
-src/test_eval_smoke.py   oracle tests         grammars/  raif.gbnf + lint
-```
-
-`data/ · adapters/ · models/ · logs/` are gitignored — regenerate with
-`src/make_data.sh`.
+Then climb the ladder (`--stage warm`, `--stage full`). Don't advance a stage until
+its gate in [`ITERATION_PLAN.md`](./ITERATION_PLAN.md) passes. For the exact
+gate-clearing run, follow [`RECIPE.md`](./RECIPE.md).
 
 ## Acceptance gate
 
-Per the v0.5 plan: **parse ≥ 98%, fidelity ≥ 95%, token Δ ≤ −8%, no held-out
-regression.** Base locked to Llama-3.2-3B until the gate clears.
+Per the v0.5 plan: **parse ≥ 98%, fidelity ≥ 95%, token delta ≤ −8%, no held-out
+regression.** Base locked to Llama-3.2-3B for the first ship.
+
+## Project layout
+
+```
+RECIPE.md                the gate-clearing run: config, ladder, reproduction
+ITERATION_PLAN.md        staged ramp (smoke → warm → full) + go/no-go gates
+cuda/                    unsloth/NVIDIA stack (+ push_to_hub.py)
+configs/ · src/          MLX stack and shared tooling
+src/eval_core.py         framework-free parse/fidelity meter
+src/test_eval_smoke.py   oracle tests that pin the meter
+grammars/                raif.gbnf + lint
+```
+
+`data/ · adapters/ · models/ · logs/` are gitignored; regenerate data with
+`src/make_data.sh` (or `src/make_data_augmented.sh` for the real-data corpus).
+
+## License and attribution
+
+- **Code and tooling in this repo:** [Apache-2.0](LICENSE).
+- **The trained adapter** is a derivative of Llama 3.2 — the **Llama 3.2 Community
+  License** applies ("Built with Llama").
+- **Training data** includes `glaiveai/glaive-function-calling-v2` (Apache-2.0) —
+  attribute Glaive AI.

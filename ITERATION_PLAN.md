@@ -25,6 +25,32 @@ uv run python src/test_eval_smoke.py     # 4 oracle tests — must be OK
 uv run python src/check_data.py          # data containment/leakage/stratify
 ```
 
+## Dataset (v0.5 overhaul — 2026-06-13)
+
+The generator (`../raif-standard/prototype/src/dataset.ts`) gained three
+in-training **mechanism-carrier** shapes, fixing a hole where some wire-format
+mechanisms were taught *only* by held-out shapes (so the model never learned
+them, and the holdout measured "never saw it" instead of generalization):
+
+| mechanism | held-out (test) | new in-training carrier |
+|---|---|---|
+| multiline `<<<…>>>` block | `multiline_body` | `record_with_note` |
+| `<<<key>>>` key wrapping | `pathological_keys` | `dotted_paths` |
+| bracket array under nesting | `deep_array_literal` | `nested_event_log` |
+
+The held-out set is unchanged, so old numbers stay comparable; the carriers
+add coverage, not leakage (`check_data.py` still passes: 2100/2100 containment,
+stratified, zero holdout leakage). The pre-overhaul `smoke` adapter parses the
+13 original shapes at the same 69% but fails all three new shapes — they need a
+fresh train run to pay off. **Regenerate, then re-climb from smoke.**
+
+## Gates are now machine-checked
+
+`eval_{cuda,smoke}.py --gate <stage>` checks the numeric gate below and exits
+nonzero on FAIL; `--out results.json` persists per-example rows + the verdict.
+On CUDA, `bash cuda/run_stage.sh <stage>` runs meter→data→train→eval+gate→export
+as one command and refuses to advertise the next rung until the gate passes.
+
 ## Stage gates
 
 Each stage's gate must pass before starting the next. "valid" = in-training

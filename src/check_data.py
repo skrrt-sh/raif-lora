@@ -44,9 +44,11 @@ def primitive_leaves(value) -> list:
 
 def fmt(v) -> str:
     # Matches the generator: strings JSON-quoted, numbers via String(v),
-    # booleans/null as literals. json.dumps covers all of these in Python.
+    # booleans/null as literals. ensure_ascii=False mirrors JS JSON.stringify,
+    # which leaves non-ASCII characters literal (real datasets carry unicode;
+    # the default ensure_ascii=True would escape it and false-fail containment).
     if isinstance(v, bool) or v is None or isinstance(v, str):
-        return json.dumps(v)
+        return json.dumps(v, ensure_ascii=False)
     return str(v)  # int/float — same shortest-roundtrip repr as JS String(v)
 
 
