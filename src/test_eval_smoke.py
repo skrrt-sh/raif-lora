@@ -25,6 +25,7 @@ class FakeTok:
     """Stands in for the HF tokenizer; eval_group only calls apply_chat_template."""
 
     def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=False):
+        """Return the first message's content verbatim (no template applied)."""
         return messages[0]["content"]
 
 
@@ -33,18 +34,21 @@ def make_generate(outputs: list[str]):
     it = iter(outputs)
 
     def generate(model, tok, prompt=None, max_tokens=0, verbose=False):
+        """Return the next scripted output, ignoring the model/prompt."""
         return next(it)
 
     return generate
 
 
 def stratified_examples(n: int = 6) -> list[dict]:
+    """Sample n shape-stratified examples from the real valid.jsonl (seed 0)."""
     examples = eval_core.load_examples(Path("./data/valid.jsonl"))
     return eval_core.sample_examples(examples, n, seed=0)
 
 
 class MeterOracle(unittest.TestCase):
     def test_value_corruption_fails_fidelity_but_parses(self):
+        """An extra-leaf output still parses but must fail byte-fidelity."""
         examples = stratified_examples(4)
         outputs = [
             ex["messages"][1]["content"] + "\nzzz_oracle=injected by meter test"
@@ -57,6 +61,7 @@ class MeterOracle(unittest.TestCase):
         self.assertEqual(stats["fidelity"], 0)
 
     def test_grammar_garbage_fails_parse(self):
+        """Non-RAIF prose must fail parse (and therefore fidelity)."""
         examples = stratified_examples(3)
         outputs = ["I cannot help with that request" for _ in examples]
         stats = eval_core.eval_group(
@@ -66,6 +71,7 @@ class MeterOracle(unittest.TestCase):
         self.assertEqual(stats["fidelity"], 0)
 
     def test_refusal_with_colon_parses_via_repair_and_is_counted(self):
+        """A colon-bearing refusal parses via repair-coercion and is counted as repaired."""
         # Caveat made explicit: TIER 1 separator coercion (':' → '=') turns a
         # prose refusal containing a colon into a one-leaf object. Such outputs
         # count as parse ✓ — so the meter must surface how many parses needed
@@ -83,6 +89,7 @@ class MeterOracle(unittest.TestCase):
         self.assertEqual(stats["repaired"], stats["n"])
 
     def test_think_prefix_is_stripped_before_decode(self):
+        """A `<think>…</think>`-prefixed output still scores full parse + fidelity."""
         # Qwen3 bases emit an empty `<think>…</think>` block before the answer.
         # RAIF lives after it, so the shared meter must strip the block at the
         # decode boundary — otherwise every Qwen sample fails parse. A no-op for
@@ -99,6 +106,7 @@ class MeterOracle(unittest.TestCase):
         self.assertEqual(stats["fidelity"], stats["n"])
 
     def test_perfect_echo_scores_full_parse_and_fidelity(self):
+        """Echoing the expected RAIF must score full parse and fidelity, 0 skipped."""
         examples = stratified_examples(6)
         self.assertGreater(len(examples), 0, "valid.jsonl is empty")
         outputs = [ex["messages"][1]["content"] for ex in examples]
@@ -116,6 +124,7 @@ class EvalDriver(unittest.TestCase):
     driver's own logic is the gate→exit-code contract and the results payload."""
 
     def _args(self, **over):
+        """Build a minimal run_eval args namespace, overriding fields via kwargs."""
         base = dict(
             n=2, seed=0,
             valid=Path("/nonexistent_valid.jsonl"),
@@ -126,12 +135,14 @@ class EvalDriver(unittest.TestCase):
         return argparse.Namespace(**base)
 
     def test_no_gate_returns_zero(self):
+        """With no gate requested, the driver exits 0 regardless of scores."""
         code = eval_core.run_eval(
             self._args(), None, FakeTok(), make_generate([]), stack="test"
         )
         self.assertEqual(code, 0)
 
     def test_failing_gate_returns_one(self):
+        """A requested gate that can't pass (no data) makes the driver exit 1."""
         # No data → no metrics → the gate cannot pass → nonzero exit.
         code = eval_core.run_eval(
             self._args(gate="smoke"), None, FakeTok(), make_generate([]), stack="test"
@@ -139,6 +150,7 @@ class EvalDriver(unittest.TestCase):
         self.assertEqual(code, 1)
 
     def test_writes_results_payload_with_stack(self):
+        """--out writes a JSON payload carrying the stack label + extra_payload fields."""
         out = Path(self.enterContext(tempfile.TemporaryDirectory())) / "r.json"
         eval_core.run_eval(
             self._args(out=out), None, FakeTok(), make_generate([]),

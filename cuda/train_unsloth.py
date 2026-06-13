@@ -68,6 +68,7 @@ def chat_markers(model_id: str) -> tuple[str, str]:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse the trainer CLI (stage, base model, data dir, hyperparam overrides)."""
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--stage", required=True, choices=sorted(STAGES),
@@ -107,6 +108,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def count_jsonl(path: Path) -> int:
+    """Count non-blank lines (examples) in a JSONL file."""
     with path.open() as f:
         return sum(1 for line in f if line.strip())
 
@@ -128,6 +130,7 @@ def validate_data(data_dir: Path) -> dict:
 
 
 def git_sha() -> str | None:
+    """Short HEAD commit SHA for the run record, or None outside a git checkout."""
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -147,12 +150,14 @@ def git_sha() -> str | None:
 def build_text_field(tok):
     """Map {messages,...} -> {"text": <full chat-template string>} for SFT."""
     def fmt(batch):
+        """Render each example's messages to the chat-template `text` field."""
         return {"text": [tok.apply_chat_template(m, tokenize=False)
                          for m in batch["messages"]]}
     return fmt
 
 
 def main() -> int:
+    """Run one stage of the LoRA ladder: load, train, save adapter + run record."""
     args = parse_args()
     cfg = dict(STAGES[args.stage])
     if args.iters is not None:
@@ -219,6 +224,7 @@ def main() -> int:
     # "Column changed from number to boolean". Training never uses meta, so load the
     # lines by hand and keep messages only — sidestepping pyarrow schema inference.
     def load_messages(path: Path):
+        """Load a JSONL file into a Dataset of {messages} only (drops the meta blob)."""
         rows = []
         with path.open() as f:
             for line in f:

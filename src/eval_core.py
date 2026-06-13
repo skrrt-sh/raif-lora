@@ -59,6 +59,7 @@ process.stdout.write(JSON.stringify(out));
 
 
 def load_examples(path: Path) -> list[dict]:
+    """Load a JSONL eval file into a list of example dicts ([] if absent)."""
     if not path.exists():
         return []
     with path.open() as f:
@@ -120,6 +121,7 @@ STAGE_GATES: dict[str, dict] = {
 
 
 def _frac(stats: dict | None, key: str) -> float | None:
+    """A group's `key` count as a fraction of n, or None when nothing was scored."""
     if not stats or stats.get("n", 0) == 0:
         return None
     return stats[key] / stats["n"]
@@ -152,6 +154,7 @@ def evaluate_gate(stage: str, valid: dict | None, holdout: dict | None) -> dict:
 
 
 def print_gate(gate: dict) -> None:
+    """Pretty-print an evaluate_gate result (per-metric ✓/✗ and PASS/FAIL)."""
     if gate.get("passed") is None:
         print(f"gate: {gate.get('note', '(none)')}")
         return

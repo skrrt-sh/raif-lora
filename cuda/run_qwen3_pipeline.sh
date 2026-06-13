@@ -5,7 +5,7 @@
 # save never destroys the only copy. The RunPod API key is read from pid 1's env
 # at runtime (never hardcoded). Status is written to $LOG/STATUS at each gate.
 set -uo pipefail
-cd /workspace/raif/raif-lora
+cd /workspace/raif/raif-lora || { echo "ERROR: failed to cd to /workspace/raif/raif-lora" >&2; exit 1; }
 export PATH="$HOME/.bun/bin:$PATH" HF_HOME="/workspace/.cache/huggingface/"
 
 OUT=adapters-cuda/qwen3-4b-full
@@ -15,9 +15,11 @@ BASE=unsloth/Qwen3-4B-Instruct-2507
 mkdir -p "$LOG"
 echo "STARTED $(date -u +%FT%TZ)" > "$LOG/STATUS"
 
-# 1. Train (reduced: 6k iters / ~1.3 epochs, dropout 0 keeps fused kernels).
+# 1. Train (gate-clearing recipe: 12k iters / ~2.5 epochs, lr 1e-4, dropout 0.05).
+# The 6k/dropout-0 run undertrained (eval loss 0.11, multiline_body 38%); this is
+# the config that cleared the gate on Llama-3.2-3B.
 python cuda/train_unsloth.py --stage full --model "$BASE" --data ./data-tbl \
-  --iters 6000 --lr 1e-4 --lora-dropout 0.0 --out "$OUT" --export-tar \
+  --iters 12000 --lr 1e-4 --lora-dropout 0.05 --out "$OUT" --export-tar \
   > "$LOG/train.log" 2>&1
 if [ $? -ne 0 ] || [ ! -f "$OUT/adapter_model.safetensors" ]; then
   echo "TRAIN_FAILED — pod kept up" >> "$LOG/STATUS"; exit 1

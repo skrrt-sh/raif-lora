@@ -28,11 +28,13 @@ HOLDOUT_SHAPES = frozenset({
 
 
 def load(path: Path) -> list[dict]:
+    """Read a JSONL dataset file into a list of example dicts."""
     with path.open() as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
 def primitive_leaves(value) -> list:
+    """Flatten a JSON value to its primitive leaves (recursing dicts/lists)."""
     out = []
     if value is None or not isinstance(value, (dict, list)):
         out.append(value)
@@ -46,6 +48,7 @@ def primitive_leaves(value) -> list:
 
 
 def fmt(v) -> str:
+    """Render a primitive leaf as it appears in the prompt (for containment checks)."""
     # Matches the generator: strings JSON-quoted, numbers via String(v),
     # booleans/null as literals. ensure_ascii=False mirrors JS JSON.stringify,
     # which leaves non-ASCII characters literal (real datasets carry unicode;
@@ -56,6 +59,7 @@ def fmt(v) -> str:
 
 
 def main() -> int:
+    """Run all dataset sanity checks; return a nonzero exit code on any failure."""
     data_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("data")
     train = load(data_dir / "train.jsonl")
     valid = load(data_dir / "valid.jsonl")

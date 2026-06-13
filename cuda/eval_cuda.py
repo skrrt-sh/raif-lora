@@ -27,6 +27,7 @@ def make_hf_generate():
     import torch
 
     def generate(model, tok, prompt, max_tokens, verbose=False):
+        """Greedily decode the assistant turn for one prompt; return its text."""
         inputs = tok(prompt, return_tensors="pt").to(model.device)
         with torch.no_grad():
             out = model.generate(
@@ -42,6 +43,7 @@ def make_hf_generate():
 
 
 def main() -> int:
+    """Load the base + adapter via unsloth, then run the shared eval driver."""
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--adapter", required=True,

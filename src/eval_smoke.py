@@ -50,6 +50,7 @@ def select_adapter_checkpoint(adapter_dir: Path, label: str) -> Path:
 
 
 def main() -> int:
+    """Load the MLX base model + adapter checkpoint, then run the shared eval driver."""
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--adapter", required=True,

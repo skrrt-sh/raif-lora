@@ -16,6 +16,7 @@ _NO_ADAPTER = Path("/nonexistent-adapter")  # load_json returns None → card us
 
 
 def test_llama_base_gets_llama_license():
+    """A Llama base yields the Llama 3.2 license + 'Built with Llama' attribution."""
     card = push_to_hub.build_model_card(
         _NO_ADAPTER, "me/raif-llama-3.2-3b-lora", "unsloth/Llama-3.2-3B-Instruct"
     )
@@ -24,6 +25,7 @@ def test_llama_base_gets_llama_license():
 
 
 def test_qwen_base_gets_apache_license_not_llama():
+    """A Qwen base yields apache-2.0 and never leaks the Llama license/attribution."""
     card = push_to_hub.build_model_card(
         _NO_ADAPTER, "me/raif-qwen-0.5b-lora", "Qwen/Qwen2.5-0.5B-Instruct"
     )
