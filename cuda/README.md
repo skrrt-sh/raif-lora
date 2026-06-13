@@ -15,6 +15,10 @@ Mac, no battery worry) while the original MLX path stays fully intact.
 | `train_unsloth.py` | stage-parametrized trainer; mirrors `../configs/llama-3-3b-sft-{smoke,warm,full}.yaml` |
 | `eval_cuda.py` | parse/fidelity eval; HF generation + the shared `eval_core` meter + bun decoder |
 | `requirements.txt` | pinned Blackwell (sm_120) stack |
+| `cloud/` | run this ladder on a rented GPU (RunPod/SSH) when the local box is down — see `cloud/README.md` |
+
+> **No local GPU?** `cloud/bootstrap.sh` provisions the whole flow on a rented
+> 24 GB card in one command. Start at `cloud/README.md`.
 
 ## Prerequisites
 

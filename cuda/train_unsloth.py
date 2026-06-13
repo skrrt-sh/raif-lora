@@ -95,6 +95,7 @@ def main() -> int:
           f"rank={cfg['rank']} alpha={cfg['alpha']} num_layers={cfg['num_layers']}")
 
     # Heavy imports deferred so --help works without the CUDA stack installed.
+    import torch
     from unsloth import FastLanguageModel
     from unsloth.chat_templates import train_on_responses_only
     from datasets import load_dataset
@@ -135,10 +136,15 @@ def main() -> int:
     train_ds = ds["train"].map(fmt, batched=True, remove_columns=ds["train"].column_names)
     eval_ds = ds["valid"].map(fmt, batched=True, remove_columns=ds["valid"].column_names)
 
+    # bf16 only where the GPU supports it (Blackwell/Ampere+); else fp16.
+    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+
+    # trl >=0.2x: SFTConfig seq arg is `max_length` (was `max_seq_length`),
+    # SFTTrainer takes `processing_class` (was `tokenizer`). See requirements-cloud.txt pins.
     sft = SFTConfig(
         output_dir=str(out),
         dataset_text_field="text",
-        max_seq_length=cfg["max_seq"],
+        max_length=cfg["max_seq"],
         per_device_train_batch_size=micro,
         gradient_accumulation_steps=grad_accum,
         max_steps=max_steps,
@@ -155,10 +161,11 @@ def main() -> int:
         save_total_limit=3,
         seed=args.seed,
         report_to="none",
-        bf16=True,
+        bf16=use_bf16,
+        fp16=not use_bf16,
     )
 
-    trainer = SFTTrainer(model=model, tokenizer=tok,
+    trainer = SFTTrainer(model=model, processing_class=tok,
                          train_dataset=train_ds, eval_dataset=eval_ds, args=sft)
     # Mask everything but the assistant turn — the MLX `mask_prompt: true`.
     trainer = train_on_responses_only(

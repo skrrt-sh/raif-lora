@@ -1,0 +1,14 @@
+# RAIF LoRA — RunPod userland stack (NO torch).
+# Reuses the RunPod PyTorch template's preinstalled torch; reinstalling it wastes
+# paid GPU time. Use a recent template (torch >= 2.5, CUDA >= 12.1) so unsloth's
+# torch floor is already met and pip does NOT pull a new torch.
+#
+# We pin only the three that fix train_unsloth.py's SFT API and lock eval parity;
+# unsloth pulls its own compatible peft/accelerate/datasets (it requires peft>=0.18,
+# so do NOT pin the old 0.14 here). Verified against unsloth 2026.6.6's declared
+# ranges: trl in [0.18.2, 0.24.0], transformers <= 5.5.0 — 4.56.2 / 0.22.2 are the
+# known-good pair (trl 0.2x: SFTConfig `max_length`, SFTTrainer `processing_class`).
+unsloth==2026.6.6
+transformers==4.56.2
+trl==0.22.2
+bitsandbytes        # only needed for --optim adamw_8bit; unsloth-compatible build
