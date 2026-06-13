@@ -63,6 +63,8 @@ The exact winning configuration, hyperparameters, and reproduction commands are 
 
 ## Use the adapter
 
+Load the base model and the adapter:
+
 ```python
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -71,6 +73,39 @@ base = AutoModelForCausalLM.from_pretrained("unsloth/Llama-3.2-3B-Instruct")
 tok = AutoTokenizer.from_pretrained("skrrt-sh/raif-llama-3.2-3b-lora")
 model = PeftModel.from_pretrained(base, "skrrt-sh/raif-llama-3.2-3b-lora")
 ```
+
+The model emits **RAIF, not JSON** — so the one step every consumer needs is a
+decode at the output boundary. RAIF is a deterministic codec, not something a
+harness has to be taught: run `decode()` and you get a JSON value back, plus a
+repair pass that recovers truncated or malformed output that plain JSON can't.
+
+This repo ships a dependency-free Python decoder so you don't need a `bun`
+subprocess in the hot path. `raif_decode.py` lives in `src/`, so put that
+directory on the import path — either copy the file into your project, or run
+with `src/` on `PYTHONPATH`:
+
+```sh
+PYTHONPATH=src python your_app.py
+```
+
+```python
+from raif_decode import decode  # pure stdlib; no torch/bun (src/ on path)
+
+raif = generate(model, tok, prompt)   # whatever your generation call returns
+result = decode(raif)                  # {"ok", "value"/"error", "repairs"}
+if result["ok"]:
+    data = result["value"]             # ← ordinary JSON; feed it downstream
+```
+
+`decode_lenient()` is the per-leaf-recovery variant for agent runtimes that
+re-ask the model for only the broken fields. Both mirror the canonical
+TypeScript decoder in [`raif-standard`](https://github.com/skrrt-sh/raif-standard).
+That equivalence is enforced two ways: `src/test_raif_decode.py` pins parity over
+the full corpus (21k+ strings), and `src/test_raif_differential.py` fuzzes both
+decoders against each other — random objects round-tripped through the real TS
+encoder, then degraded by mutations targeting every repair branch (truncation,
+fences, markers, CRLF, nonce/delimiter, brace-flatten, schema-typed, pure
+garbage) — asserting `decode_py(x) ≡ decode_ts(x)` for every `x`.
 
 ## Training stacks
 
@@ -123,6 +158,9 @@ cuda/                    unsloth/NVIDIA stack (+ push_to_hub.py)
 configs/ · src/          MLX stack and shared tooling
 src/eval_core.py         framework-free parse/fidelity meter
 src/test_eval_smoke.py   oracle tests that pin the meter
+src/raif_decode.py       pure-Python RAIF→JSON decoder (the consumer boundary)
+src/test_raif_decode.py  corpus parity test vs the canonical TS decoder
+src/test_raif_differential.py  differential fuzz: py decoder ≡ TS decoder
 grammars/                raif.gbnf + lint
 ```
 
