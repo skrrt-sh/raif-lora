@@ -72,9 +72,16 @@ pip install -q --upgrade pip wheel
 
 log "3a. Reuse the image's torch, install userland only (no torch reinstall)"
 # The RunPod PyTorch template ships a matching torch; reinstalling it wastes paid
-# GPU time. Print what the image has, then install ONLY the userland stack
-# (unsloth/trl/peft/…) from the torch-free, pinned requirements-cloud.txt.
-python -c "import torch;print('image torch',torch.__version__,torch.version.cuda)"
+# GPU time. Print what the image has and fail fast if it's older than unsloth's
+# floor (else pip would silently re-pull a multi-GB torch), then install ONLY the
+# userland stack (unsloth/trl/peft/…) from the torch-free requirements-cloud.txt.
+python - <<'PY'
+import sys, torch
+print("image torch", torch.__version__, torch.version.cuda)
+if tuple(int(x) for x in torch.__version__.split(".")[:2]) < (2, 5):
+    sys.exit(f"FATAL: image torch {torch.__version__} < 2.5 — pick a newer RunPod "
+             "PyTorch template (torch >= 2.5, CUDA >= 12.1) so torch isn't re-pulled.")
+PY
 pip install -r cuda/cloud/requirements-cloud.txt
 
 # ── 4. torch must see the GPU (we PRINT capability, never assert (12,0)) ───────

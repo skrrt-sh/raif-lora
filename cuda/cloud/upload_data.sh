@@ -22,7 +22,9 @@ PORT="${2:?ssh port required}"
 REMOTE="${3:-/workspace/raif/raif-lora/data}"
 
 cd "$(dirname "$0")/../.."          # → raif-lora root
-[ -s data/train.jsonl ] || { echo "no local data/train.jsonl — generate it first"; exit 1; }
+for f in data/train.jsonl data/valid.jsonl data/eval_holdout.jsonl; do
+  [ -s "$f" ] || { echo "missing or empty: $f — generate it first"; exit 1; }
+done
 
 echo "Uploading data/{train,valid,eval_holdout}.jsonl → root@$HOST:$REMOTE"
 ssh -p "$PORT" "root@$HOST" "mkdir -p '$REMOTE'"
