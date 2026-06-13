@@ -26,6 +26,20 @@ def load_json(p: Path):
     return json.loads(p.read_text()) if p.exists() else None
 
 
+def license_for(base_model: str) -> dict:
+    """License id + attribution wording for the base model's family. Qwen2.5
+    small bases (0.5/1.5/7B…) are Apache-2.0; Llama 3.2 carries Meta's community
+    license. Returned dict feeds the card frontmatter + attribution section."""
+    mid = base_model.lower()
+    if "qwen" in mid:
+        return {"id": "apache-2.0", "family": "Qwen2.5", "builtwith": "Built with Qwen",
+                "attrib": "Derivative of Qwen2.5 — **Apache-2.0** (the Qwen2.5 small "
+                          "bases are Apache-2.0 licensed)."}
+    return {"id": "llama3.2", "family": "Llama 3.2", "builtwith": "Built with Llama",
+            "attrib": "Derivative of Llama 3.2 — **Llama 3.2 Community License** "
+                      'applies ("Built with Llama").'}
+
+
 def build_model_card(adapter: Path, repo: str, base_model: str) -> str:
     meta = load_json(adapter / "run_meta.json") or {}
     ev = load_json(adapter / "eval.json") or {}
@@ -42,13 +56,20 @@ def build_model_card(adapter: Path, repo: str, base_model: str) -> str:
                  f"{100*stats['fidelity']/n:.0f}% | {n} |\n")
     gate = ev.get("gate") or {}
     gate_line = ("**Acceptance gate: PASS**" if gate.get("passed")
-                 else "Acceptance gate: not fully met" if gate.get("passed") is False
-                 else "")
+                 else "Acceptance gate: not fully met — see the per-group numbers below."
+                 if gate.get("passed") is False else "")
+    lic = license_for(base_model)
+    # Token savings were measured on Llama-3.2/cl100k tokenizers; don't assert the
+    # same −14% for a different tokenizer family we haven't re-benched.
+    token_note = ("- Token cost: −14% vs minified JSON (cl100k / Llama-3.2 tokenizers)."
+                  if lic["family"].startswith("Llama")
+                  else "- Token cost vs minified JSON: not re-measured for this base's "
+                       "tokenizer (the −14% figure is from the Llama-3.2/cl100k bench).")
 
     return f"""---
 base_model: {base_model}
 library_name: peft
-license: llama3.2
+license: {lic["id"]}
 tags:
 - lora
 - peft
@@ -82,7 +103,7 @@ brings those properties to small, local, and self-hosted inference.
 |---|---:|---:|---:|
 {rows}
 - **valid** = held-out split of in-training shapes; **holdout** = shapes withheld from training entirely.
-- Token cost: −14% vs minified JSON (cl100k / Llama-3.2 tokenizers).
+{token_note}
 
 ## Training
 
@@ -115,7 +136,7 @@ model = PeftModel.from_pretrained(base, "{repo}")
 
 ## License & attribution
 
-Derivative of Llama 3.2 — **Llama 3.2 Community License** applies ("Built with Llama").
+{lic["attrib"]}
 Trained in part on `glaiveai/glaive-function-calling-v2` (Apache-2.0) — attribute Glaive AI.
 """
 

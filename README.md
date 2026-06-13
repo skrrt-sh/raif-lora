@@ -61,6 +61,34 @@ Two levers moved the numbers, tracked stage by stage:
 The exact winning configuration, hyperparameters, and reproduction commands are in
 [**`RECIPE.md`**](./RECIPE.md).
 
+## Going smaller: Qwen2.5-0.5B
+
+How far down does this push? We ported the same recipe to **Qwen2.5-0.5B-Instruct**
+— a model 6× smaller, normally too weak for rigid structured output — to see what a
+tiny, local model can do. Same pipeline, same data, same eval meter; only the base
+model and its chat-template markers change.
+
+> **[skrrt-sh/raif-qwen2.5-0.5b-lora](https://huggingface.co/skrrt-sh/raif-qwen2.5-0.5b-lora)** · Apache-2.0 base
+
+| group | parse | fidelity |
+|---|---:|---:|
+| valid (in-training shapes) | 97% | 92% |
+| holdout (withheld shapes) | 97% | 81% |
+
+It does **not** clear the full gate (95% holdout fidelity), but it emits valid RAIF
+97% of the time and is byte-exact on the realistic cases (100% on real tool-call
+arguments). Two findings came out of pushing it:
+
+- **The hardest shapes are a coverage problem, not a capacity wall.** The held-out
+  `large_table` shape started at 8% fidelity; adding one in-training
+  *mechanism-carrier* that teaches the `::` table form (which the corpus had never
+  taught directly) lifted it to **77%** — the 0.5B learns any single mechanism once
+  it's shown one in-distribution.
+- **At 0.5B, mechanisms compete for capacity.** Teaching the table form *traded off*
+  ~20 points of the multiline-block mechanism — a frontier the 3B never hits (it
+  holds every mechanism at 100% simultaneously). Clearing the gate from here means
+  more capacity (e.g. Qwen2.5-1.5B), not more data.
+
 ## Use the adapter
 
 ```python
