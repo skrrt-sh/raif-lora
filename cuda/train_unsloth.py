@@ -24,6 +24,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Stage ladder — mirrors ../configs/llama-3-3b-sft-{smoke,warm,full}.yaml.
@@ -67,7 +70,48 @@ def parse_args() -> argparse.Namespace:
                    help="optimizer (adamw_8bit needs bitsandbytes w/ Blackwell "
                         "support; use adamw_torch if it errors on sm_120)")
     p.add_argument("--seed", type=int, default=0, help="MLX-parity seed (default 0)")
+    p.add_argument("--iters", type=int, default=None,
+                   help="override the stage's micro-batch count (MLX 'iters'); raise it to "
+                        "train more epochs over a larger dataset. examples-seen scales linearly.")
+    p.add_argument("--lr", type=float, default=2e-4,
+                   help="learning rate (default 2e-4; lower e.g. 1e-4 to curb overfitting)")
+    p.add_argument("--lora-dropout", type=float, default=0.0,
+                   help="LoRA dropout (default 0 keeps unsloth's fused fast path; >0 "
+                        "regularizes but disables the fused kernels, so training is slower)")
+    p.add_argument("--export-tar", action="store_true",
+                   help="after saving, tar the adapter dir to <out>.tgz for pulling "
+                        "off the pod (/workspace is wiped on terminate)")
     return p.parse_args()
+
+
+def count_jsonl(path: Path) -> int:
+    with path.open() as f:
+        return sum(1 for line in f if line.strip())
+
+
+def validate_data(data_dir: Path) -> dict:
+    """Fail fast (before the heavy CUDA imports) if the data is missing or empty.
+    Returns {train, valid} example counts for the run record."""
+    counts = {}
+    for name in ("train.jsonl", "valid.jsonl"):
+        path = data_dir / name
+        if not path.exists():
+            raise SystemExit(f"✗ missing data file: {path}\n"
+                             f"  generate it first:  bash src/make_data.sh <smoke|warm|full>")
+        n = count_jsonl(path)
+        if n == 0:
+            raise SystemExit(f"✗ empty data file: {path}")
+        counts[name.split(".")[0]] = n
+    return counts
+
+
+def git_sha() -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL, text=True).strip()
+    except Exception:
+        return None
 
 
 def build_text_field(tok):
@@ -80,7 +124,9 @@ def build_text_field(tok):
 
 def main() -> int:
     args = parse_args()
-    cfg = STAGES[args.stage]
+    cfg = dict(STAGES[args.stage])
+    if args.iters is not None:
+        cfg["iters"] = args.iters
     out = args.out or Path(f"./adapters-cuda/{args.stage}")
 
     # Keep effective batch constant if the user lowers the micro-batch to fit VRAM.
@@ -91,9 +137,17 @@ def main() -> int:
     # by the FULL accumulation so examples-seen == the MLX run's.
     max_steps = max(1, cfg["iters"] // grad_accum)
 
+    # Fail fast on missing/empty data BEFORE the multi-second CUDA imports and
+    # the model download — cheap to catch, expensive to discover 10 minutes in.
+    data_counts = validate_data(args.data)
+
     print(f"[stage={args.stage}] base={args.model} seq={cfg['max_seq']} "
           f"micro_batch={micro} grad_accum={grad_accum} max_steps={max_steps} "
           f"rank={cfg['rank']} alpha={cfg['alpha']} num_layers={cfg['num_layers']}")
+    examples_seen = max_steps * micro * grad_accum
+    print(f"[data] train={data_counts['train']} valid={data_counts['valid']}  "
+          f"examples-seen≈{examples_seen} "
+          f"(~{examples_seen / data_counts['train']:.2f} epochs)")
 
     # Heavy imports deferred so --help works without the CUDA stack installed.
     import torch
@@ -121,7 +175,7 @@ def main() -> int:
         r=cfg["rank"],
         target_modules=TARGET_MODULES,
         lora_alpha=cfg["alpha"],
-        lora_dropout=0,         # 0 keeps unsloth's fused fast path (MLX used 0.05)
+        lora_dropout=args.lora_dropout,   # 0 keeps unsloth's fused fast path; >0 regularizes
         bias="none",
         use_gradient_checkpointing="unsloth",   # 16 GB headroom for 2048 seq
         random_state=args.seed,
@@ -161,7 +215,7 @@ def main() -> int:
         per_device_train_batch_size=micro,
         gradient_accumulation_steps=grad_accum,
         max_steps=max_steps,
-        learning_rate=2e-4,
+        learning_rate=args.lr,
         optim=args.optim,
         lr_scheduler_type="constant",   # MLX used a flat 2e-4, no decay/warmup
         warmup_steps=0,
@@ -184,13 +238,63 @@ def main() -> int:
     trainer = train_on_responses_only(
         trainer, instruction_part=INSTRUCTION_PART, response_part=RESPONSE_PART)
 
-    trainer.train()
+    t0 = time.time()
+    train_result = trainer.train()
+    train_secs = time.time() - t0
 
     out.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(str(out))
     tok.save_pretrained(str(out))
+
+    # ── Run record (so a saved adapter is self-describing & reproducible) ──
+    # Pull the final train loss and the last eval loss out of the trainer's
+    # step log, and persist the whole curve for later plotting / regression.
+    log_history = list(getattr(trainer.state, "log_history", []))
+    final_train_loss = next((e["loss"] for e in reversed(log_history) if "loss" in e), None)
+    final_eval_loss = next((e["eval_loss"] for e in reversed(log_history) if "eval_loss" in e), None)
+    run_meta = {
+        "stage": args.stage,
+        "base_model": args.model,
+        "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "git_sha": git_sha(),
+        "seed": args.seed,
+        "hyperparams": {
+            "iters": cfg["iters"],
+            "rank": cfg["rank"], "alpha": cfg["alpha"],
+            "num_layers": cfg["num_layers"], "target_modules": TARGET_MODULES,
+            "max_seq": cfg["max_seq"], "micro_batch": micro,
+            "grad_accum": grad_accum, "max_steps": max_steps,
+            "learning_rate": args.lr, "lr_scheduler": "constant",
+            "optim": args.optim, "lora_dropout": args.lora_dropout,
+        },
+        "data": {**data_counts, "examples_seen": examples_seen,
+                 "epochs": round(examples_seen / data_counts["train"], 3),
+                 "dir": str(args.data)},
+        "result": {
+            "train_seconds": round(train_secs, 1),
+            "final_train_loss": final_train_loss,
+            "final_eval_loss": final_eval_loss,
+            "train_runtime_metrics": getattr(train_result, "metrics", None),
+        },
+    }
+    (out / "run_meta.json").write_text(json.dumps(run_meta, indent=2))
+    (out / "train_log.json").write_text(json.dumps(log_history, indent=2))
+
     print(f"\nSaved LoRA adapter to {out}")
-    print(f"Eval it with:  python cuda/eval_cuda.py --adapter {out}")
+    print(f"  run_meta.json  — stage/hyperparams/data/result "
+          f"(train {train_secs/60:.1f} min, "
+          f"loss {final_train_loss} → eval {final_eval_loss})")
+    print(f"  train_log.json — {len(log_history)} step records")
+
+    if args.export_tar:
+        tar_path = out.with_suffix(".tgz")
+        subprocess.run(["tar", "czf", str(tar_path), "-C", str(out.parent), out.name],
+                       check=True)
+        print(f"  exported {tar_path}  "
+              f"(pull with: runpodctl send {tar_path})")
+
+    print(f"\nEval it with:  python cuda/eval_cuda.py --adapter {out} "
+          f"--gate {args.stage} --out {out}/eval.json")
     return 0
 
 
