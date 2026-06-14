@@ -23,7 +23,13 @@ from pathlib import Path
 
 
 def load_json(p: Path):
+    """Load JSON from the given path, or return None if it doesn't exist."""
     return json.loads(p.read_text()) if p.exists() else None
+
+
+def _fmt_loss(x) -> str:
+    """Render a loss value to 4 significant figures, or em-dash if missing/None."""
+    return f"{x:.4g}" if isinstance(x, (int, float)) else "—"
 
 
 def license_for(base_model: str) -> dict:
@@ -41,6 +47,12 @@ def license_for(base_model: str) -> dict:
 
 
 def build_model_card(adapter: Path, repo: str, base_model: str) -> str:
+    """Build a Hugging Face model card (markdown) from adapter metadata.
+
+    Reads run_meta.json and eval.json from the adapter dir if present, otherwise
+    falls back to empty defaults. License/attribution and the token-cost note are
+    derived from the base model's family via license_for().
+    """
     meta = load_json(adapter / "run_meta.json") or {}
     ev = load_json(adapter / "eval.json") or {}
     hp = meta.get("hyperparams", {})
@@ -116,7 +128,7 @@ brings those properties to small, local, and self-hosted inference.
 | learning rate | {hp.get('learning_rate')} ({hp.get('lr_scheduler','constant')}) |
 | seq length | {hp.get('max_seq')} |
 | epochs / examples | {data.get('epochs')} / {data.get('examples_seen')} |
-| final train / eval loss | {res.get('final_train_loss')} / {res.get('final_eval_loss')} |
+| final train / eval loss | {_fmt_loss(res.get('final_train_loss'))} / {_fmt_loss(res.get('final_eval_loss'))} |
 
 Data: synthetic RAIF examples (with mechanism-carrier shapes) augmented with
 real tool-call argument objects from `glaiveai/glaive-function-calling-v2`
@@ -142,6 +154,7 @@ Trained in part on `glaiveai/glaive-function-calling-v2` (Apache-2.0) — attrib
 
 
 def main() -> int:
+    """Parse arguments, write the model card, and upload the adapter to the HF Hub."""
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--adapter", type=Path, required=True, help="adapter dir to upload")
