@@ -98,7 +98,7 @@ Effective hyperparameters (from `run_meta.json`):
 | prompt masking | train_on_responses_only (loss on assistant turn only) |
 | seed | 0 |
 | wall time (A40) | 87.8 min |
-| final train / eval loss | 0.0041 / 0.0056 |
+| final train / eval loss | 0.0041 / 0.005583 |
 
 ## Provenance / licensing
 
@@ -166,7 +166,7 @@ are auto-detected; same data, same eval meter).
 | rank / alpha / dropout | 32 / 64 / 0.05 |
 | lr / schedule / seq | 1e-4, constant / 2048 |
 | examples seen / epochs | 48,000 / ≈2.56 |
-| final train / eval loss | 0.0046 / 0.0113 |
+| final train / eval loss | 0.0046 / 0.01134 |
 
 Result (n=64): valid **97% parse / 92% fidelity**, holdout **97% parse / 81%
 fidelity**. It does **not** clear the full gate (95% holdout fidelity) but emits
