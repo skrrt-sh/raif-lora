@@ -61,6 +61,28 @@ Two levers moved the numbers, tracked stage by stage:
 The exact winning configuration, hyperparameters, and reproduction commands are in
 [**`RECIPE.md`**](./RECIPE.md).
 
+## A deployable agent model: Qwen3-4B
+
+The recipe also ports up to **Qwen3-4B-Instruct-2507** — a non-thinking instruct
+model that runs on ~14 GB VRAM, the sweet spot for real self-hosted agents.
+
+> **[skrrt-sh/raif-qwen3-4b-lora](https://huggingface.co/skrrt-sh/raif-qwen3-4b-lora)** · Apache-2.0 base
+
+| group | parse | fidelity |
+|---|---:|---:|
+| valid (in-training shapes) | 97% | **95%** |
+| holdout (withheld shapes) | **98%** | **95%** |
+
+Trained on the same carrier-augmented corpus (12k iters / 2.56 epochs). It clears
+the gate on **three of four metrics with margin** — including **holdout fidelity
+95%** (the generalization test) and `multiline_body` recovering to 85%. The fourth,
+valid-parse at 96.9%, misses the 98% bar by a single example: two of the longest
+`tabular_report` tables (17+ rows) overran the eval's 384-token generation cap and
+were truncated mid-row — an eval-budget artifact, not a model error (the cap is now
+1024). Qwen3 emits an empty `<think></think>` block before its answer; this repo
+strips it at the decode boundary (`eval_core.strip_think_prefix`), the standard way
+Qwen3 output is consumed.
+
 ## Going smaller: Qwen2.5-0.5B
 
 How far down does this push? We ported the same recipe to **Qwen2.5-0.5B-Instruct**
