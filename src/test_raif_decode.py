@@ -18,17 +18,15 @@ Run:  uv run python src/test_raif_decode.py   (or: pytest src/test_raif_decode.p
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _raif_oracle import values_equal  # noqa: E402
+from eval_core import batch_decode  # noqa: E402
+from raif_bun import available  # noqa: E402
 from raif_decode import decode  # noqa: E402
 
-PROTOTYPE_DIR = (
-    Path(__file__).resolve().parent.parent.parent / "raif-standard" / "prototype"
-)
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # Crafted inputs that hit repair branches the corpus may not cover. Each is a
@@ -95,69 +93,6 @@ CRAFTED: list[str] = [
 ]
 
 
-def _bun_available() -> bool:
-    """True when bun and the canonical TS decoder are available."""
-    return (
-        subprocess.run(["which", "bun"], capture_output=True).returncode == 0
-        and (PROTOTYPE_DIR / "src" / "raif.ts").exists()
-    )
-
-
-_BATCH_DECODE_SRC = """
-import { decode } from "./src/raif.ts";
-const path = process.env.RAIF_DECODE_INPUT;
-const items = JSON.parse(await Bun.file(path).text());
-const out = items.map((raif) => {
-  try {
-    const r = decode(raif);
-    if (r && r.ok) return { ok: true, value: r.value };
-    return { ok: false };
-  } catch (e) {
-    return { ok: false };
-  }
-});
-process.stdout.write(JSON.stringify(out));
-"""
-
-
-def bun_decode_batch(raifs: list[str]) -> list[dict]:
-    """Decode many RAIF strings in one bun invocation; returns the parsed result list."""
-    import tempfile
-
-    fd, tmp = tempfile.mkstemp(suffix=".json", prefix="raif_parity_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(raifs, f)
-        res = subprocess.run(
-            ["bun", "-e", _BATCH_DECODE_SRC],
-            capture_output=True,
-            cwd=PROTOTYPE_DIR,
-            timeout=max(120, 5 * len(raifs)),
-            env={**os.environ, "RAIF_DECODE_INPUT": tmp},
-        )
-    finally:
-        os.unlink(tmp)
-    if res.returncode != 0:
-        raise RuntimeError(f"bun decode failed: {res.stderr.decode('utf-8', 'replace')[:800]}")
-    return json.loads(res.stdout.decode("utf-8"))
-
-
-def values_equal(a, b) -> bool:
-    """Deep equality with JS-number tolerance: 5 and 5.0 are equal, since the
-    two decoders may land on int vs float for the same numeric value."""
-    if isinstance(a, bool) or isinstance(b, bool):
-        return a is b
-    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        return float(a) == float(b)
-    if isinstance(a, dict) and isinstance(b, dict):
-        if a.keys() != b.keys():
-            return False
-        return all(values_equal(a[k], b[k]) for k in a)
-    if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(values_equal(x, y) for x, y in zip(a, b, strict=True))
-    return a == b
-
-
 def load_corpus() -> list[str]:
     """Load every assistant-turn RAIF string from the dataset jsonl files."""
     raifs: list[str] = []
@@ -177,7 +112,7 @@ def load_corpus() -> list[str]:
 
 def run_parity(raifs: list[str], label: str) -> int:
     """Returns the number of mismatches (0 == parity)."""
-    bun = bun_decode_batch(raifs)
+    bun = batch_decode(raifs)
     assert len(bun) == len(raifs), (
         f"[{label}] bun output length {len(bun)} != input count {len(raifs)} "
         f"— parity mismatches would be undercounted by zip"
@@ -203,7 +138,7 @@ def run_parity(raifs: list[str], label: str) -> int:
 
 def main() -> int:
     """Run crafted + corpus parity against the canonical decoder; return the process exit code."""
-    if not _bun_available():
+    if not available():
         print("SKIP: bun and/or raif-standard prototype not available — parity not checked.")
         return 0
 
@@ -230,7 +165,7 @@ def main() -> int:
 def test_parity_with_canonical_decoder():
     """pytest entry point. Skips when the TS toolchain is unavailable; fails
     on any Python/TS divergence over crafted cases + the real corpus."""
-    if not _bun_available():
+    if not available():
         import pytest
 
         pytest.skip("bun and/or raif-standard prototype not available")
