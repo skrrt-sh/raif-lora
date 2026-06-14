@@ -146,6 +146,30 @@ tok = AutoTokenizer.from_pretrained("{repo}")
 model = PeftModel.from_pretrained(base, "{repo}")
 ```
 
+This model emits **RAIF, not JSON** — decode it at the output boundary with the
+official codec (pure-stdlib, no `bun`, nothing to clone):
+
+```sh
+pip install raif-format        # or: uv add raif-format
+```
+
+```python
+from raif import decode        # installs as `raif-format`, imports as `raif`
+
+result = decode(model_output)  # {{"ok", "value", "repairs"}}
+data = result["value"] if result["ok"] else None   # ordinary JSON, ready downstream
+```
+
+`decode_lenient()` recovers the intact leaves of a truncated stream. The codec is
+the same one used to score this model, kept byte-identical across Python and
+TypeScript by a shared conformance corpus.
+
+## Links
+
+- **Format spec & reference codec:** <https://github.com/skrrt-sh/raif-standard>
+- **Decoder:** [`raif-format`](https://pypi.org/project/raif-format/) on PyPI · [`raif-format`](https://www.npmjs.com/package/raif-format) on npm
+- **Training recipe, eval & the other RAIF models:** <https://github.com/skrrt-sh/raif-lora>
+
 ## License & attribution
 
 {lic["attrib"]}

@@ -129,33 +129,35 @@ decode at the output boundary. RAIF is a deterministic codec, not something a
 harness has to be taught: run `decode()` and you get a JSON value back, plus a
 repair pass that recovers truncated or malformed output that plain JSON can't.
 
-This repo ships a dependency-free Python decoder so you don't need a `bun`
-subprocess in the hot path. `raif_decode.py` lives in `src/`, so put that
-directory on the import path — either copy the file into your project, or run
-with `src/` on `PYTHONPATH`:
+Install the official decoder — [`raif-format`](https://pypi.org/project/raif-format/)
+on PyPI (and [`raif-format`](https://www.npmjs.com/package/raif-format) on npm for
+JS/TS). It's pure-stdlib with zero dependencies, so there's no `bun` subprocess in
+the hot path and nothing to clone:
 
 ```sh
-PYTHONPATH=src python your_app.py
+pip install raif-format        # or: uv add raif-format
 ```
 
 ```python
-from raif_decode import decode  # pure stdlib; no torch/bun (src/ on path)
+from raif import decode        # installs as `raif-format`, imports as `raif`
 
-raif = generate(model, tok, prompt)   # whatever your generation call returns
-result = decode(raif)                  # {"ok", "value"/"error", "repairs"}
+raif_text = generate(model, tok, prompt)   # whatever your generation call returns
+result = decode(raif_text)                 # {"ok", "value"/"error", "repairs"}
 if result["ok"]:
-    data = result["value"]             # ← ordinary JSON; feed it downstream
+    data = result["value"]                 # ← ordinary JSON; feed it downstream
 ```
 
 `decode_lenient()` is the per-leaf-recovery variant for agent runtimes that
-re-ask the model for only the broken fields. Both mirror the canonical
-TypeScript decoder in [`raif-standard`](https://github.com/skrrt-sh/raif-standard).
-That equivalence is enforced two ways: `src/test_raif_decode.py` pins parity over
-the full corpus (21k+ strings), and `src/test_raif_differential.py` fuzzes both
-decoders against each other — random objects round-tripped through the real TS
-encoder, then degraded by mutations targeting every repair branch (truncation,
-fences, markers, CRLF, nonce/delimiter, brace-flatten, schema-typed, pure
-garbage) — asserting `decode_py(x) ≡ decode_ts(x)` for every `x`.
+re-ask the model for only the broken fields. `raif-format` is the canonical codec
+from [`raif-standard`](https://github.com/skrrt-sh/raif-standard), kept byte-for-byte
+identical across Python and TypeScript by a shared conformance corpus.
+
+> **Note:** for its own offline eval this repo still vendors a standalone copy of
+> the decoder at `src/raif_decode.py`, pinned to the canonical TS decoder by
+> `src/test_raif_decode.py` (parity over 21k+ strings) and
+> `src/test_raif_differential.py` (fuzzes `decode_py(x) ≡ decode_ts(x)` across
+> every repair branch). New consumers should use the published `raif-format`
+> package above.
 
 ## Training stacks
 
