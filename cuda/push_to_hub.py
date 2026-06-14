@@ -100,12 +100,14 @@ datasets:
 
 <p align="center">
   A LoRA adapter that makes <b>{base_model}</b> emit
-  <a href="https://github.com/skrrt-sh/raif-standard">RAIF</a> instead of JSON for tool calls.
+  <a href="https://github.com/skrrt-sh/raif-standard">RAIF</a> instead of JSON for structured output.
 </p>
 
-RAIF — the Repairable AI Interchange Format — round-trips losslessly to JSON,
-repairs its own syntax errors, and costs ~14% fewer tokens than JSON. This adapter
-brings those properties to small, local, and self-hosted inference.
+RAIF — the Repairable AI Interchange Format — is a drop-in layer for the JSON a
+model produces (structured outputs, JSON/strict mode, tool arguments alike). It
+round-trips losslessly to JSON, repairs its own syntax errors, and costs ~14%
+fewer tokens. This adapter brings those properties to small, local, and
+self-hosted inference.
 
 {gate_line}
 
