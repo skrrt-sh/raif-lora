@@ -48,6 +48,8 @@ def stratify(examples: list[dict], n: int) -> list[dict]:
     for ex in examples:
         by_shape.setdefault(ex["meta"].get("shape", "?"), []).append(ex)
     shapes = sorted(by_shape)
+    if not shapes or n <= 0:
+        return []
     out: list[dict] = []
     i = 0
     while len(out) < min(n, len(examples)):
@@ -136,6 +138,8 @@ def main() -> int:
     examples = [json.loads(line) for line in path.open() if line.strip()]
     examples = [e for e in examples if e["meta"].get("task") == "translate"]
     examples = stratify(examples, args.n)
+    if not examples:
+        sys.exit(f"No 'translate' examples to compare in {path}")
 
     agg = {"base": {"parse": 0, "fid": 0, "tok": 0},
            "raif": {"parse": 0, "fid": 0, "tok": 0}}
@@ -173,6 +177,8 @@ def main() -> int:
             print(f"    base raw: {b_out[:120]!r}")
 
     print(f"\n{'='*64}\nSUMMARY over {n} structured-output tasks")
+    if n == 0:
+        sys.exit("No decodable gold RAIF examples; nothing to compare.")
     print("  (base is *coached*: 'compact JSON, nothing else' — its best case)")
     for label in ("base", "raif"):
         a = agg[label]

@@ -123,7 +123,7 @@ def repl(gen) -> None:
     print("Paste JSON to translate, or type an instruction. Ctrl-D or 'exit' to quit.\n")
     while True:
         try:
-            line = input("\033[36myou ›\033[0m ").strip()
+            line = input("\033[36myou >\033[0m ").strip()
         except EOFError:
             print()
             return

@@ -19,10 +19,17 @@ cd "$(dirname "$0")/.."
 MODEL="${MODEL:-llama-3b}"
 PORT="${PORT:-8899}"
 
-# Resolve base + adapter paths from the example model registry.
-read -r BASE ADAPTER < <(uv run python -c "
+# Resolve base + adapter paths from the example model registry. MODEL is passed
+# through the environment (never interpolated into the code) and each path is
+# printed on its own line, so values with spaces or quotes are handled safely.
+{ read -r BASE; read -r ADAPTER; } < <(MODEL="$MODEL" uv run python - <<'PY'
+import os
 import examples.raif_models as M
-s = M.spec('$MODEL'); print(M.base_path(s), s['mlx_dir'])")
+s = M.spec(os.environ["MODEL"])
+print(M.base_path(s))
+print(s["mlx_dir"])
+PY
+)
 
 if [ ! -f "$ADAPTER/adapters.safetensors" ]; then
   echo "Adapter for '$MODEL' not built." >&2

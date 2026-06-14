@@ -65,7 +65,7 @@ echo '{"user":"ada","tasks":["write","test","ship"],"done":false,"count":3}' \
   | uv run python examples/chat.py --model qwen-0.5b
 ```
 
-```
+```text
 ── RAIF (model output) ──
 count=3
 done=false
