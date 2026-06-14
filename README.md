@@ -152,6 +152,16 @@ re-ask the model for only the broken fields. `raif-format` is the canonical code
 from [`raif-standard`](https://github.com/skrrt-sh/raif-standard), kept byte-for-byte
 identical across Python and TypeScript by a shared conformance corpus.
 
+### Run it locally
+
+[**`examples/`**](./examples) has runnable end-to-end demos on Apple Silicon (MLX),
+for any of the three published adapters (`--model llama-3b | qwen-0.5b | qwen-4b`,
+everything pulled from the Hub): a terminal chat (`chat.py`), an OpenAI-compatible
+server (`serve.sh`), a Vercel **AI SDK** client (`ai-sdk/`), and a head-to-head
+**base-vs-RAIF** comparison (`compare.py`). A one-time `setup_adapter.py` converts
+the published PEFT adapter to MLX format — the local MLX runtime needs a different
+layout than the torch/PEFT weights above. See [`examples/README.md`](./examples/README.md).
+
 > **Note:** for its own offline eval this repo still vendors a standalone copy of
 > the decoder at `src/raif_decode.py`, pinned to the canonical TS decoder by
 > `src/test_raif_decode.py` (parity over 21k+ strings) and
@@ -206,6 +216,7 @@ regression.** Base locked to Llama-3.2-3B for the first ship.
 ```
 RECIPE.md                the gate-clearing run: config, ladder, reproduction
 ITERATION_PLAN.md        staged ramp (smoke → warm → full) + go/no-go gates
+examples/                runnable local demos (chat, server, AI SDK, base-vs-RAIF)
 cuda/                    unsloth/NVIDIA stack (+ push_to_hub.py)
 configs/ · src/          MLX stack and shared tooling
 src/eval_core.py         framework-free parse/fidelity meter
