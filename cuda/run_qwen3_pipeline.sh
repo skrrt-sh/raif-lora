@@ -15,7 +15,7 @@ BASE=unsloth/Qwen3-4B-Instruct-2507
 mkdir -p "$LOG"
 echo "STARTED $(date -u +%FT%TZ)" > "$LOG/STATUS"
 
-# 1. Train (gate-clearing recipe: 12k iters / ~2.5 epochs, lr 1e-4, dropout 0.05).
+# 1. Train (gate-clearing recipe: 12k iters / ~2.56 epochs, lr 1e-4, dropout 0.05).
 # The 6k/dropout-0 run undertrained (eval loss 0.11, multiline_body 38%); this is
 # the config that cleared the gate on Llama-3.2-3B.
 python cuda/train_unsloth.py --stage full --model "$BASE" --data ./data-tbl \

@@ -49,7 +49,7 @@ Two levers moved the numbers, tracked stage by stage:
 |---|---:|---:|---:|---:|
 | baseline (synthetic-only) | 2e-4 | 0 | 69% | 23% |
 | + real-data augmentation | 2e-4 | 0 | 94% | 81% |
-| + regularization (**published**) | 1e-4 | 0.05 | **100%** | **95–100%** |
+| + regularization (**published**) | 1e-4 | 0.05 | **100%** | **95%** |
 
 1. **Data** — fixing mechanism coverage in the synthetic corpus and adding real
    tool-call arguments from [glaive-function-calling-v2](https://huggingface.co/datasets/glaiveai/glaive-function-calling-v2)
@@ -76,7 +76,7 @@ model that runs on ~14 GB VRAM, the sweet spot for real self-hosted agents.
 Trained on the same carrier-augmented corpus (12k iters / 2.56 epochs). It clears
 the gate on **three of four metrics with margin** — including **holdout fidelity
 95%** (the generalization test) and `multiline_body` recovering to 85%. The fourth,
-valid-parse at 96.9%, misses the 98% bar by a single example: two of the longest
+valid-parse at 96.9% (97% rounded), misses the 98% bar by a single example: two of the longest
 `tabular_report` tables (17+ rows) overran the eval's 384-token generation cap and
 were truncated mid-row — an eval-budget artifact, not a model error (the cap is now
 1024). Qwen3 emits an empty `<think></think>` block before its answer; this repo
