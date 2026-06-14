@@ -20,6 +20,8 @@ echo "FINISH_STARTED $(date -u +%FT%TZ)" >> "$LOG/STATUS"
 python cuda/eval_cuda.py --adapter "$OUT" --n 64 --gate full \
   --valid ./data-tbl/valid.jsonl --holdout ./data-tbl/eval_holdout.jsonl \
   --out "$OUT/eval.json" > "$LOG/eval.log" 2>&1
+EVAL_RC=$?
+[ $EVAL_RC -eq 0 ] || { echo "EVAL_FAILED rc=$EVAL_RC — pod kept up" >> "$LOG/STATUS"; exit 1; }
 [ -f "$OUT/eval.json" ] || { echo "EVAL_FAILED (no eval.json) — pod kept up" >> "$LOG/STATUS"; exit 1; }
 
 # 3. Stage clean artifacts.
