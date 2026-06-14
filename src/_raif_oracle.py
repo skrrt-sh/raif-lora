@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from raif_bun import available, run_bridge
 
+# `available` is re-exported from raif_bun so callers can probe the bridge via
+# `oracle.available()` (used in test_raif_differential.py); it is not defined here.
 __all__ = ["available", "js_encode", "js_decode", "js_decode_pairs", "values_equal"]
 
 _BRIDGE = """
