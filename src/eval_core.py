@@ -19,7 +19,12 @@ from pathlib import Path
 
 from raif_bun import run_bridge
 
-MAX_TOKENS = 384
+# Generation budget per example. 384 was sized for the original shapes, but the
+# `tabular_report` carrier emits homogeneous tables up to ~18 rows × 7 cols (~450+
+# tokens). At 384 the longest tables truncate mid-row → spurious parse failures
+# (the model's output is correct, just cut off). 1024 covers the largest example
+# while staying well under the 2048 eval seq length.
+MAX_TOKENS = 1024
 
 # Default eval data + sampling, shared by both stacks' CLIs.
 VALID_FILE = Path("./data/valid.jsonl")
