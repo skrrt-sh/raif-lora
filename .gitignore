@@ -19,3 +19,6 @@ logs/
 
 # Local agent / editor state
 .claude/
+
+# macOS
+.DS_Store
