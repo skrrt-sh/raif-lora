@@ -146,8 +146,9 @@ Takeaways:
   Qwen2.5-0.5B is both *less accurate and more verbose* — the LoRA makes it leaner
   **and** correct. The smaller the base, the more the fine-tune buys you.
 - **The token win tracks complexity** — modest on small payloads (−4 to −6%),
-  reaching **−14%** on the larger withheld shapes, matching the repo's headline
-  −14%-vs-JSON figure.
+  reaching **−14%** on the larger withheld shapes. The ecosystem headline is the
+  real-world figure (**~10%** on actual function-call data); −14% is the
+  table-heavy eval-corpus aggregate.
 - **Uncoached, base models are unusable for this.** Given the exact training prompt
   (`Rewrite this JSON payload as RAIF: …`) the base doesn't know RAIF — it
   hallucinates and wraps the answer in prose you'd have to scrape. The adapter is
