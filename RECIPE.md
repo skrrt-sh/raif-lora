@@ -120,8 +120,10 @@ Effective hyperparameters (from `run_meta.json`):
 The winning config is base-agnostic: `train_unsloth.py` auto-detects the chat
 template (Llama header-id vs Qwen/ChatML) from `--model`, so a port is the same
 command with the base swapped. Two bases are published; numbers below are the
-n=64 acceptance evals (the same ones on the HF cards). Token cost is **not**
-re-benched for non-Llama tokenizers — the −14% figure is Llama-3.2 / cl100k.
+n=64 acceptance evals (the same ones on the HF cards). The −14% token figure here
+is Llama-3.2 / cl100k; it is benched across tokenizers in raif-standard's
+[`benchmarks/`](https://github.com/skrrt-sh/raif-standard/tree/main/benchmarks)
+(−12% to −16% on cl100k / o200k / Llama / Qwen, ~5–8% on Mistral).
 
 ### Qwen3-4B-Instruct-2507 (agent-grade, Apache-2.0)
 
