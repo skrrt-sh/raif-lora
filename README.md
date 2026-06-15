@@ -39,7 +39,8 @@ adapter (`full-reg`) clears all four gate criteria, evaluated at n=64:
 | valid (held-out split of in-training shapes) | **100%** | **100%** |
 | holdout (shapes withheld from training entirely) | **100%** | **95%** |
 
-Token cost: **−14% vs minified JSON**, inside the −8% acceptance bar.
+Token cost: **−14% vs minified JSON**, inside the −8% acceptance bar — and
+[benched across tokenizers](https://github.com/skrrt-sh/raif-standard/tree/main/benchmarks).
 
 ### How it got there
 
