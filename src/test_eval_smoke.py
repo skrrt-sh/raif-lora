@@ -19,6 +19,7 @@ import unittest
 from pathlib import Path
 
 import eval_core
+import raif_bun
 
 
 class FakeTok:
@@ -46,6 +47,9 @@ def stratified_examples(n: int = 6) -> list[dict]:
     return eval_core.sample_examples(examples, n, seed=0)
 
 
+@unittest.skipUnless(
+    raif_bun.available(), "bun / raif-standard prototype not available"
+)
 class MeterOracle(unittest.TestCase):
     def test_value_corruption_fails_fidelity_but_parses(self):
         """An extra-leaf output still parses but must fail byte-fidelity."""
