@@ -85,13 +85,13 @@ def build_model_card(adapter: Path, repo: str, base_model: str) -> str:
         else ""
     )
     lic = license_for(base_model)
-    # The ~10% real-world figure holds across tokenizers (cl100k −9, o200k −10,
-    # Llama −9, Qwen −8, Mistral −8), so every card leads with it (no per-family
-    # hedge). The −14% is the Llama-3.2/cl100k eval-corpus aggregate (table-heavy);
-    # only the Llama card cites it, since Qwen lands nearer −12% there.
+    # The ~10% real-world figure holds across tokenizers (cl100k -9, o200k -10,
+    # Llama -9, Qwen -8, Mistral -8), so every card leads with it (no per-family
+    # hedge). The -14% is the Llama-3.2/cl100k eval-corpus aggregate (table-heavy);
+    # only the Llama card cites it, since Qwen lands nearer -12% there.
     token_note = (
         "- Token cost: ~10% fewer than minified JSON on real "
-        "function-call data; −14% on the table-heavy eval corpus."
+        "function-call data; -14% on the table-heavy eval corpus."
         if lic["family"].startswith("Llama")
         else "- Token cost: ~10% fewer than minified JSON on real "
         "function-call data (cross-tokenizer)."
