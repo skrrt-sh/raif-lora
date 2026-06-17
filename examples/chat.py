@@ -36,8 +36,10 @@ def make_generate(model: str):
     callable plus the spec (for the think-strip flag)."""
     s = M.spec(model)
     if not (s["mlx_dir"] / "adapters.safetensors").exists():
-        sys.exit(f"Adapter for {model!r} not built.\n"
-                 f"Run:  uv run python examples/setup_adapter.py --model {model}")
+        sys.exit(
+            f"Adapter for {model!r} not built.\n"
+            f"Run:  uv run python examples/setup_adapter.py --model {model}"
+        )
     from mlx_lm import generate, load
     from mlx_lm.sample_utils import make_sampler
     from mlx_lm.utils import load_adapters
@@ -51,9 +53,17 @@ def make_generate(model: str):
     def gen(user_msg: str, max_tokens: int = 1024) -> str:
         prompt = tok.apply_chat_template(
             [{"role": "user", "content": user_msg}],
-            add_generation_prompt=True, tokenize=False)
-        out = generate(mdl, tok, prompt=prompt, max_tokens=max_tokens,
-                       sampler=greedy, verbose=False)
+            add_generation_prompt=True,
+            tokenize=False,
+        )
+        out = generate(
+            mdl,
+            tok,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            sampler=greedy,
+            verbose=False,
+        )
         return M.strip_think(s, out).strip()
 
     return gen, tok
@@ -88,8 +98,10 @@ def show_turn(raif_text: str) -> None:
         raif_bytes = len(raif_text.encode())
         if json_bytes:
             delta = 100 * (raif_bytes - json_bytes) / json_bytes
-            print(f"\033[90m{raif_bytes} B RAIF vs {json_bytes} B JSON "
-                  f"({delta:+.0f}%)\033[0m")
+            print(
+                f"\033[90m{raif_bytes} B RAIF vs {json_bytes} B JSON "
+                f"({delta:+.0f}%)\033[0m"
+            )
     else:
         print(f"\033[31mdecode failed: {result.get('error')}\033[0m")
 
@@ -108,19 +120,26 @@ def selftest(gen, n: int = 12) -> int:
         out = gen(user)
         r, gr = decode(out), decode(gold)
         ok = r.get("ok")
-        fid = bool(ok and gr.get("ok")
-                   and json.dumps(r["value"], sort_keys=True)
-                   == json.dumps(gr["value"], sort_keys=True))
+        fid = bool(
+            ok
+            and gr.get("ok")
+            and json.dumps(r["value"], sort_keys=True)
+            == json.dumps(gr["value"], sort_keys=True)
+        )
         n_parse += bool(ok)
         n_fid += fid
-        print(f"[{i:2d}] {ex['meta']['shape']:26s} "
-              f"parse {'✓' if ok else '✗'}  fidelity {'✓' if fid else '✗'}")
+        print(
+            f"[{i:2d}] {ex['meta']['shape']:26s} "
+            f"parse {'✓' if ok else '✗'}  fidelity {'✓' if fid else '✗'}"
+        )
     print(f"\nparse {n_parse}/{len(examples)}  fidelity {n_fid}/{len(examples)}")
     return 0 if n_fid >= 0.8 * len(examples) else 1
 
 
 def repl(gen) -> None:
-    print("Paste JSON to translate, or type an instruction. Ctrl-D or 'exit' to quit.\n")
+    print(
+        "Paste JSON to translate, or type an instruction. Ctrl-D or 'exit' to quit.\n"
+    )
     while True:
         try:
             line = input("\033[36myou >\033[0m ").strip()
@@ -136,12 +155,20 @@ def repl(gen) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", default=M.DEFAULT_MODEL, choices=list(M.MODELS),
-                    help="which RAIF model to load")
-    ap.add_argument("--selftest", action="store_true",
-                    help="round-trip held-out examples and report fidelity")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--model",
+        default=M.DEFAULT_MODEL,
+        choices=list(M.MODELS),
+        help="which RAIF model to load",
+    )
+    ap.add_argument(
+        "--selftest",
+        action="store_true",
+        help="round-trip held-out examples and report fidelity",
+    )
     ap.add_argument("--n", type=int, default=12, help="examples for --selftest")
     args = ap.parse_args()
 
@@ -149,7 +176,7 @@ def main() -> int:
 
     if args.selftest:
         return selftest(gen, args.n)
-    if not sys.stdin.isatty():               # piped input -> one-shot
+    if not sys.stdin.isatty():  # piped input -> one-shot
         data = sys.stdin.read().strip()
         if data:
             show_turn(gen(as_translate_prompt(data)))

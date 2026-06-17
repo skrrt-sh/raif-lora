@@ -94,13 +94,52 @@ def encode_objects(objs: list, profile: str) -> list[str]:
 # unwrap / inference branches): literals-as-strings, delimiters, separators,
 # whitespace, newlines, markers, fences.
 TRICKY_STRINGS = [
-    "", " ", "  x  ", "trailing ", " leading", "\t", "tab\there",
-    "a\nb", "a\nb\nc", "line\n>>>\nmore", "\r", "a\r\nb",
-    ">>>", "<<<", "<<<x>>>", "a>>>b", "x=<<<", "<<<a,>",
-    "true", "false", "null", "123", "-0", "1.5", "1e5", "01", "1e999",
-    "[]", "{}", "[", "]", "{a=1}", "a,b,c", "a:b", "key=val", "a[0]",
-    "ts 14:02:33", "emoji 🎉", "<raif>", "</raif>", "```", "<|raif_start|>",
-    "héllo", "naïve", "  ", "a.b.c",
+    "",
+    " ",
+    "  x  ",
+    "trailing ",
+    " leading",
+    "\t",
+    "tab\there",
+    "a\nb",
+    "a\nb\nc",
+    "line\n>>>\nmore",
+    "\r",
+    "a\r\nb",
+    ">>>",
+    "<<<",
+    "<<<x>>>",
+    "a>>>b",
+    "x=<<<",
+    "<<<a,>",
+    "true",
+    "false",
+    "null",
+    "123",
+    "-0",
+    "1.5",
+    "1e5",
+    "01",
+    "1e999",
+    "[]",
+    "{}",
+    "[",
+    "]",
+    "{a=1}",
+    "a,b,c",
+    "a:b",
+    "key=val",
+    "a[0]",
+    "ts 14:02:33",
+    "emoji 🎉",
+    "<raif>",
+    "</raif>",
+    "```",
+    "<|raif_start|>",
+    "héllo",
+    "naïve",
+    "  ",
+    "a.b.c",
 ]
 
 # Key characters the encoder must round-trip (everything except <<< / >>>, which
@@ -153,9 +192,7 @@ def rng_value(rng: random.Random, depth: int):
             cols = [rng_key(rng) for _ in range(rng.randint(1, 3))]
             cols = list(dict.fromkeys(c for c in cols if c))  # unique, non-empty
             if cols:
-                return [
-                    {c: rng_primitive(rng) for c in cols} for _ in range(n)
-                ]
+                return [{c: rng_primitive(rng) for c in cols} for _ in range(n)]
         return [rng_value(rng, depth - 1) for _ in range(n)]
     # Nested object
     return rng_object(rng, depth - 1)
@@ -210,7 +247,9 @@ def test_rich_objects_with_markers():
     assert_agrees(raifs, "markers")
 
 
-def _valid_corpus(seed: int, count: int, depth: int, profile: str, markers=False) -> list[str]:
+def _valid_corpus(
+    seed: int, count: int, depth: int, profile: str, markers=False
+) -> list[str]:
     """Encode random objects via the oracle and keep the valid RAIF strings."""
     objs = gen_objects(seed, count, depth)
     enc = oracle.js_encode(objs, profile=profile, markers=markers)
@@ -252,9 +291,9 @@ def test_surface_wrapping_mutations():
         out.append(f"```raif\n{raif}\n```")
         out.append(f"<raif>\n{raif}\n</raif>")
         out.append(f"<|raif_start|>\n{raif}\n<|raif_end|>")
-        out.append(f"<raif>\n{raif}")               # opener only → missing_close_marker
-        out.append(raif.replace("\n", "\r\n"))      # CRLF
-        out.append(f"  \n{raif}\n  ")               # leading/trailing whitespace
+        out.append(f"<raif>\n{raif}")  # opener only → missing_close_marker
+        out.append(raif.replace("\n", "\r\n"))  # CRLF
+        out.append(f"  \n{raif}\n  ")  # leading/trailing whitespace
     assert_agrees(out, "surface-wrapping")
 
 
@@ -283,7 +322,14 @@ def _mutate_line_structural(raif: str, rng: random.Random) -> str:
         # mutate hex right after a <<< opener or >>> closer
         return _re.sub(
             r"(<<<|>>>)([0-9a-fA-F]*)",
-            lambda m: m.group(1) + ("".join(rng.choice("0123456789abcdef") for _ in range(rng.randint(0, 4)))),
+            lambda m: (
+                m.group(1)
+                + (
+                    "".join(
+                        rng.choice("0123456789abcdef") for _ in range(rng.randint(0, 4))
+                    )
+                )
+            ),
             raif,
             count=1,
         )
@@ -305,7 +351,9 @@ def test_structural_line_mutations():
     the Python decoder agrees with the oracle (both accept-and-equal, or both
     reject)."""
     rng = random.Random(6)
-    base = _valid_corpus(6, 1200, 4, "generation") + _valid_corpus(60, 800, 4, "canonical")
+    base = _valid_corpus(6, 1200, 4, "generation") + _valid_corpus(
+        60, 800, 4, "canonical"
+    )
     out: list[str] = []
     for raif in base:
         for _ in range(3):
@@ -330,21 +378,31 @@ def test_brace_and_relaxed_forms():
                 lines.append(f"{pad}{k}={{")
                 lines.extend(emit(v, indent + 1))
                 lines.append(f"{pad}}}")
-            elif isinstance(v, list) and v and all(not isinstance(x, (dict, list)) for x in v):
+            elif (
+                isinstance(v, list)
+                and v
+                and all(not isinstance(x, (dict, list)) for x in v)
+            ):
                 lines.append(f"{pad}{k}=[")
                 for x in v:
                     lines.append(f"{pad}  {x if not isinstance(x, str) else x}")
                 lines.append(f"{pad}]")
             else:
-                lines.append(f"{pad}{k}={v if not isinstance(v, (dict, list)) else 'x'}")
+                lines.append(
+                    f"{pad}{k}={v if not isinstance(v, (dict, list)) else 'x'}"
+                )
         return lines
 
     for obj in gen_objects(seed=7, count=1200, depth=4):
         out.append("\n".join(emit(obj, 0)))
     # relaxed openers
     for _ in range(400):
-        nonce = "".join(rng.choice("0123456789abcdef") for _ in range(rng.randint(0, 3)))
-        body = "\n".join(rng_string(rng).replace("\n", " ") for _ in range(rng.randint(0, 3)))
+        nonce = "".join(
+            rng.choice("0123456789abcdef") for _ in range(rng.randint(0, 3))
+        )
+        body = "\n".join(
+            rng_string(rng).replace("\n", " ") for _ in range(rng.randint(0, 3))
+        )
         op = rng.choice(["<<", "<"])
         cl = rng.choice([">>>", ">>", ">"])
         out.append(f"k={op}{nonce}\n{body}\n{cl}{nonce}")
@@ -365,7 +423,7 @@ def test_encode_gate_unencodable_keys():
         "a>>>b=2",
         "x.y>>>=3",
         "rows::>>>a\nrows[0]=1",
-        "<<>>>.<<<>>>:s=ok",            # the shape the fuzzer surfaced
+        "<<>>>.<<<>>>:s=ok",  # the shape the fuzzer surfaced
         # — assembled key contains <<< via a non-opener spelling → reject —
         "k=v\nweird>>>key=2",
         # — clean controls: partial delimiters in keys are encodable → accept —
@@ -374,7 +432,7 @@ def test_encode_gate_unencodable_keys():
         "a>b=3",
         ">>a=4",
         "plain.key=5",
-        "<<<wrapped key>>>=6",          # wrapped → unwraps to clean key
+        "<<<wrapped key>>>=6",  # wrapped → unwraps to clean key
         # — value-side delimiters are always fine (only keys gate) —
         "a=x>>>y\nb=<<<z>>>",
     ]
@@ -382,6 +440,7 @@ def test_encode_gate_unencodable_keys():
 
 
 # — schema-typed decode —
+
 
 def _simple_key(rng: random.Random) -> str:
     """Short lowercase key for schema-friendly objects."""
@@ -400,18 +459,24 @@ def _typed_value(rng: random.Random, depth: int):
     if r < 0.62:
         return rng.choice([0.5, -1.5, 3.25])
     if r < 0.78:
-        return rng.choice(["hi", "a value", "", "with,comma", "x:y", "tab\tx", "emoji🎉"])
+        return rng.choice(
+            ["hi", "a value", "", "with,comma", "x:y", "tab\tx", "emoji🎉"]
+        )
     if depth <= 0:
         return rng.choice(["leaf", 7, True])
     if r < 0.88:
         # homogeneous array (primitives or primitive-objects)
         n = rng.randint(0, 3)
         if rng.random() < 0.5 and n >= 2:
-            cols = list(dict.fromkeys(_simple_key(rng) for _ in range(rng.randint(1, 2))))
+            cols = list(
+                dict.fromkeys(_simple_key(rng) for _ in range(rng.randint(1, 2)))
+            )
             return [{c: _typed_prim(rng) for c in cols} for _ in range(n)]
         return [_typed_prim(rng) for _ in range(n)]
     # nested object
-    return {_simple_key(rng): _typed_value(rng, depth - 1) for _ in range(rng.randint(0, 3))}
+    return {
+        _simple_key(rng): _typed_value(rng, depth - 1) for _ in range(rng.randint(0, 3))
+    }
 
 
 def _typed_prim(rng: random.Random):
@@ -525,8 +590,28 @@ def test_pure_garbage():
         n = rng.randint(0, 40)
         out.append("".join(rng.choice(alpha) for _ in range(n)))
     # Plus dense delimiter/separator runs that stress the openers and splitters.
-    tokens = ["<<<", ">>>", "<<", ">>", "=", "::", ":s=", ":n=", "=[", "={", "]", "}",
-              "\n", "a", "1", ",", "[0]", "<raif>", "</raif>", "```"]
+    tokens = [
+        "<<<",
+        ">>>",
+        "<<",
+        ">>",
+        "=",
+        "::",
+        ":s=",
+        ":n=",
+        "=[",
+        "={",
+        "]",
+        "}",
+        "\n",
+        "a",
+        "1",
+        ",",
+        "[0]",
+        "<raif>",
+        "</raif>",
+        "```",
+    ]
     for _ in range(4000):
         n = rng.randint(1, 12)
         out.append("".join(rng.choice(tokens) for _ in range(n)))
@@ -541,13 +626,13 @@ def test_line_terminator_semantics():
     decode as a plain leaf, not as an array/brace/multiline opener. Found by
     `test_pure_garbage`; pinned here."""
     cases = [
-        "x\r=[",                    # not an array opener → value "["
-        "x\r={",                    # not a brace opener
-        "k\r=<<<",                  # not a multiline opener → value "<<<"
-        "k\r=<<",                   # not a relaxed opener
+        "x\r=[",  # not an array opener → value "["
+        "x\r={",  # not a brace opener
+        "k\r=<<<",  # not a multiline opener → value "<<<"
+        "k\r=<<",  # not a relaxed opener
         "a.b\u2028c=[",  # U+2028 interior
         "a.b\u2029c=[",  # U+2029 interior
-        "é{/,éb.é🎉>\r=[",          # the exact string the fuzzer surfaced
+        "é{/,éb.é🎉>\r=[",  # the exact string the fuzzer surfaced
         # controls: a *trailing* CR is structural and IS stripped, so these ARE
         # openers (rows/closer follow) — must still match the oracle.
         "xs=[\r\n1\r\n2\r\n]",
@@ -564,18 +649,40 @@ def test_unicode_whitespace_and_numbers():
     reject overflow, Python ints don't. All must now agree with the oracle."""
     cases = [
         # (1) whitespace set — leading/trailing
-        "\x85a=1", "\x1ca=1", "\x1da=1", "\x1ea=1", "\x1fa=1",   # py-only ws → keep as data
-        "﻿a=1", "a=1﻿",                                 # BOM: js-only ws
-        "\xa0a=1", " a=1 ", "\ta=1\t",                            # shared ws
-        "\x85", "﻿", "   ",                                  # whole-doc blank variants
+        "\x85a=1",
+        "\x1ca=1",
+        "\x1da=1",
+        "\x1ea=1",
+        "\x1fa=1",  # py-only ws → keep as data
+        "﻿a=1",
+        "a=1﻿",  # BOM: js-only ws
+        "\xa0a=1",
+        " a=1 ",
+        "\ta=1\t",  # shared ws
+        "\x85",
+        "﻿",
+        "   ",  # whole-doc blank variants
         # (2) non-ASCII digits must NOT parse as numbers / indices
-        "a=1١", "a:n=1١", "a[1١]=x", "ts::c\nts[1١]=9", "a=١",
+        "a=1١",
+        "a:n=1١",
+        "a[1١]=x",
+        "ts::c\nts[1١]=9",
+        "a=١",
         # (3) double precision + overflow
-        "a=9007199254740993", "a=9007199254740992", "a=1e308",
-        "a=" + "9" * 400, "a=1e309", "a:n=" + "9" * 400,          # overflow → both reject
-        "a=-0", "a=0", "a=00", "a=1.0", "a=1e0",
+        "a=9007199254740993",
+        "a=9007199254740992",
+        "a=1e308",
+        "a=" + "9" * 400,
+        "a=1e309",
+        "a:n=" + "9" * 400,  # overflow → both reject
+        "a=-0",
+        "a=0",
+        "a=00",
+        "a=1.0",
+        "a=1e0",
         # combined: BOM-led fence, exotic ws around leaves
-        "﻿```\na=1\nb=2\n```", "\x85a=1\x85\nb=2",
+        "﻿```\na=1\nb=2\n```",
+        "\x85a=1\x85\nb=2",
     ]
     assert_agrees(cases, "unicode-number")
 
@@ -586,7 +693,9 @@ def test_repeated_key_detail_utf16_order():
     code units, NOT Python code points. For an astral key (😀, surrogate lead
     0xD83D) vs a BMP key (U+E000) the two orders differ; pin the UTF-16 one."""
     r = decode("😀=1\n😀=2\n=3\n=4")
-    detail = next(x["detail"] for x in r["repairs"] if x["kind"] == "repeated_keys_indexed")
+    detail = next(
+        x["detail"] for x in r["repairs"] if x["kind"] == "repeated_keys_indexed"
+    )
     # UTF-16: 😀 (0xD83D…) sorts before  (0xE000); code points would reverse it.
     assert detail == "😀,", [hex(ord(c)) for c in detail]
 

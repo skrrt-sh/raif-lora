@@ -21,10 +21,15 @@ from pathlib import Path
 # Canonical held-out shape list (plan §3.4) — the single source of truth.
 # make_data.sh derives its default --holdout-shapes from this via `python -c`,
 # so the generator and this validator can never drift apart.
-HOLDOUT_SHAPES = frozenset({
-    "multiline_body", "pathological_keys", "large_table",
-    "deep_array_literal", "flat_inline_object",
-})
+HOLDOUT_SHAPES = frozenset(
+    {
+        "multiline_body",
+        "pathological_keys",
+        "large_table",
+        "deep_array_literal",
+        "flat_inline_object",
+    }
+)
 
 
 def load(path: Path) -> list[dict]:
@@ -69,7 +74,9 @@ def main() -> int:
     # 1 & 2: holdout containment.
     holdout_shapes = {ex["meta"]["shape"] for ex in holdout}
     if not holdout_shapes <= HOLDOUT_SHAPES:
-        print(f"FAIL: eval_holdout.jsonl has non-holdout shapes: {holdout_shapes - HOLDOUT_SHAPES}")
+        print(
+            f"FAIL: eval_holdout.jsonl has non-holdout shapes: {holdout_shapes - HOLDOUT_SHAPES}"
+        )
         failures += 1
     if holdout_shapes != HOLDOUT_SHAPES:
         print(f"WARN: holdout file missing shapes: {HOLDOUT_SHAPES - holdout_shapes}")
@@ -105,9 +112,11 @@ def main() -> int:
         ]
         if missing_leaves:
             bad += 1
-            print(f"FAIL: {ex['meta']['shape']} seed={ex['meta']['variation_seed']} "
-                  f"task={ex['meta']['task']}: {len(missing_leaves)} leaf/leaves not in "
-                  f"prompt: {', '.join(repr(m) for m in missing_leaves)}")
+            print(
+                f"FAIL: {ex['meta']['shape']} seed={ex['meta']['variation_seed']} "
+                f"task={ex['meta']['task']}: {len(missing_leaves)} leaf/leaves not in "
+                f"prompt: {', '.join(repr(m) for m in missing_leaves)}"
+            )
     if bad:
         failures += 1
     print(f"prompt↔completion leaf containment: {checked - bad}/{checked} examples OK")

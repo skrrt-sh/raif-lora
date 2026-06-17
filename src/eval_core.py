@@ -42,6 +42,7 @@ def strip_think_prefix(text: str) -> str:
     """Strip a leading `<think>…</think>` block from a model's raw output."""
     return _THINK_RE.sub("", text, count=1)
 
+
 # Reads a JSON array of RAIF strings from the file named by RAIF_DECODE_INPUT
 # and writes a JSON array of {ok, value?, repairs?, error?} — one bun process
 # per batch.
@@ -118,10 +119,14 @@ def canon(obj: object) -> str:
 # checked outside the eval and noted by the caller.
 STAGE_GATES: dict[str, dict] = {
     "smoke": {"valid_fidelity": 0.50},
-    "warm":  {"valid_fidelity": 0.75, "holdout_fidelity": 0.2301},  # "> smoke's 23%"
-    "mid":   {"valid_parse": 0.95},
-    "full":  {"valid_parse": 0.98, "valid_fidelity": 0.95,
-              "holdout_parse": 0.98, "holdout_fidelity": 0.95},
+    "warm": {"valid_fidelity": 0.75, "holdout_fidelity": 0.2301},  # "> smoke's 23%"
+    "mid": {"valid_parse": 0.95},
+    "full": {
+        "valid_parse": 0.98,
+        "valid_fidelity": 0.95,
+        "holdout_parse": 0.98,
+        "holdout_fidelity": 0.95,
+    },
 }
 
 
@@ -137,8 +142,12 @@ def evaluate_gate(stage: str, valid: dict | None, holdout: dict | None) -> dict:
     {stage, passed, checks:[{metric, threshold, actual, ok}], note}."""
     gate = STAGE_GATES.get(stage)
     if gate is None:
-        return {"stage": stage, "passed": None, "checks": [],
-                "note": f"no gate defined for stage {stage!r}"}
+        return {
+            "stage": stage,
+            "passed": None,
+            "checks": [],
+            "note": f"no gate defined for stage {stage!r}",
+        }
     actual = {
         "valid_parse": _frac(valid, "parse"),
         "valid_fidelity": _frac(valid, "fidelity"),
@@ -151,10 +160,22 @@ def evaluate_gate(stage: str, valid: dict | None, holdout: dict | None) -> dict:
         a = actual.get(metric)
         ok = a is not None and a >= threshold
         passed = passed and ok
-        checks.append({"metric": metric, "threshold": round(threshold, 4),
-                       "actual": None if a is None else round(a, 4), "ok": ok})
-    note = ("full-stage acceptance also requires ≤0.92× JSON tokens (bun bench) "
-            "and no held-out regression — not checked here.") if stage == "full" else ""
+        checks.append(
+            {
+                "metric": metric,
+                "threshold": round(threshold, 4),
+                "actual": None if a is None else round(a, 4),
+                "ok": ok,
+            }
+        )
+    note = (
+        (
+            "full-stage acceptance also requires ≤0.92× JSON tokens (bun bench) "
+            "and no held-out regression — not checked here."
+        )
+        if stage == "full"
+        else ""
+    )
     return {"stage": stage, "passed": passed, "checks": checks, "note": note}
 
 
@@ -166,10 +187,14 @@ def print_gate(gate: dict) -> None:
     print(f"── gate [{gate['stage']}] ──")
     for c in gate["checks"]:
         mark = "✓" if c["ok"] else "✗"
-        act = "n/a" if c["actual"] is None else f"{100*c['actual']:.0f}%"
-        print(f"  {mark} {c['metric']:18s} ≥ {100*c['threshold']:.0f}%   actual {act}")
-    print(f"  → {'PASS' if gate['passed'] else 'FAIL'}"
-          + (f"   ({gate['note']})" if gate.get("note") else ""))
+        act = "n/a" if c["actual"] is None else f"{100 * c['actual']:.0f}%"
+        print(
+            f"  {mark} {c['metric']:18s} ≥ {100 * c['threshold']:.0f}%   actual {act}"
+        )
+    print(
+        f"  → {'PASS' if gate['passed'] else 'FAIL'}"
+        + (f"   ({gate['note']})" if gate.get("note") else "")
+    )
 
 
 def write_results_json(path, payload: dict) -> None:
@@ -202,8 +227,10 @@ def eval_group(
             kept.append((ex, res.get("value")))
         else:
             skipped += 1
-            print(f"    SKIP {shape}: expected RAIF failed to decode "
-                  f"({res.get('error', '?')[:120]})")
+            print(
+                f"    SKIP {shape}: expected RAIF failed to decode "
+                f"({res.get('error', '?')[:120]})"
+            )
 
     outputs: list[str] = []
     for ex, _ in kept:
@@ -244,27 +271,44 @@ def eval_group(
         if not ok_p:
             print(f"      error: {err.splitlines()[0] if err else '(empty)'}")
             print(f"      model output (first 200 chars): {out[:200]!r}")
-        rows.append({
-            "shape": shape, "task": task, "parse": ok_p, "fidelity": fid_pass,
-            "repaired": was_repaired,
-            "error": (err.splitlines()[0] if err else None) if not ok_p else None,
-            # Keep the output snippet only for failures, to keep the JSON small.
-            "output": out[:400] if not (ok_p and fid_pass) else None,
-        })
+        rows.append(
+            {
+                "shape": shape,
+                "task": task,
+                "parse": ok_p,
+                "fidelity": fid_pass,
+                "repaired": was_repaired,
+                "error": (err.splitlines()[0] if err else None) if not ok_p else None,
+                # Keep the output snippet only for failures, to keep the JSON small.
+                "output": out[:400] if not (ok_p and fid_pass) else None,
+            }
+        )
 
     n = len(kept)  # skipped examples are excluded from the denominator
     if n == 0:
         print(f"[{name}] all {skipped} examples skipped — nothing to score\n")
-        return {"parse": 0, "fidelity": 0, "repaired": 0, "n": 0,
-                "skipped": skipped, "rows": rows}
+        return {
+            "parse": 0,
+            "fidelity": 0,
+            "repaired": 0,
+            "n": 0,
+            "skipped": skipped,
+            "rows": rows,
+        }
     print(
-        f"\n[{name}] parse:    {parse_ok}/{n} ({100*parse_ok/n:.0f}%)"
+        f"\n[{name}] parse:    {parse_ok}/{n} ({100 * parse_ok / n:.0f}%)"
         f" — {repaired} via repair\n"
-        f"[{name}] fidelity: {fidelity_ok}/{n} ({100*fidelity_ok/n:.0f}%)\n"
+        f"[{name}] fidelity: {fidelity_ok}/{n} ({100 * fidelity_ok / n:.0f}%)\n"
         f"[{name}] skipped:  {skipped} (excluded from denominator)\n"
     )
-    return {"parse": parse_ok, "fidelity": fidelity_ok, "repaired": repaired,
-            "n": n, "skipped": skipped, "rows": rows}
+    return {
+        "parse": parse_ok,
+        "fidelity": fidelity_ok,
+        "repaired": repaired,
+        "n": n,
+        "skipped": skipped,
+        "rows": rows,
+    }
 
 
 # ── Shared CLI driver (used by both src/eval_smoke.py and cuda/eval_cuda.py) ──
@@ -274,22 +318,45 @@ def add_common_eval_args(p) -> None:
     """Register the eval flags shared by both stacks (sampling, data files, output,
     gate) on an argparse parser. Stack-specific flags (adapter, checkpoint, max-seq)
     are added by the caller."""
-    p.add_argument("--n", type=int, default=N_SAMPLES,
-                   help=f"examples to sample per group (default {N_SAMPLES})")
-    p.add_argument("--seed", type=int, default=0,
-                   help="RNG seed for example sampling (default 0)")
-    p.add_argument("--valid", type=Path, default=VALID_FILE,
-                   help=f"in-training-shape eval file (default {VALID_FILE})")
-    p.add_argument("--holdout", type=Path, default=HOLDOUT_FILE,
-                   help=f"held-out-shape eval file (default {HOLDOUT_FILE})")
-    p.add_argument("--out", type=Path, default=None,
-                   help="write full results JSON here (per-example rows + summary + gate)")
-    p.add_argument("--gate", default=None, choices=["smoke", "warm", "mid", "full"],
-                   help="check this stage's ITERATION_PLAN gate and print PASS/FAIL; "
-                        "exit nonzero on FAIL")
+    p.add_argument(
+        "--n",
+        type=int,
+        default=N_SAMPLES,
+        help=f"examples to sample per group (default {N_SAMPLES})",
+    )
+    p.add_argument(
+        "--seed", type=int, default=0, help="RNG seed for example sampling (default 0)"
+    )
+    p.add_argument(
+        "--valid",
+        type=Path,
+        default=VALID_FILE,
+        help=f"in-training-shape eval file (default {VALID_FILE})",
+    )
+    p.add_argument(
+        "--holdout",
+        type=Path,
+        default=HOLDOUT_FILE,
+        help=f"held-out-shape eval file (default {HOLDOUT_FILE})",
+    )
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="write full results JSON here (per-example rows + summary + gate)",
+    )
+    p.add_argument(
+        "--gate",
+        default=None,
+        choices=["smoke", "warm", "mid", "full"],
+        help="check this stage's ITERATION_PLAN gate and print PASS/FAIL; "
+        "exit nonzero on FAIL",
+    )
 
 
-def run_eval(args, model, tok, generate, stack: str, extra_payload: dict | None = None) -> int:
+def run_eval(
+    args, model, tok, generate, stack: str, extra_payload: dict | None = None
+) -> int:
     """Score the valid + holdout groups with `generate`, print the summary and the
     optional stage gate, optionally write the results JSON, and return the process
     exit code (1 only when a requested gate fails). `stack` labels the payload;
@@ -308,11 +375,13 @@ def run_eval(args, model, tok, generate, stack: str, extra_payload: dict | None 
         if stats is None or stats["n"] == 0:
             print(f"{name:30s} (no scored examples)")
             continue
-        print(f"{name:30s} parse {stats['parse']}/{stats['n']} "
-              f"({100*stats['parse']/stats['n']:.0f}%)  "
-              f"fidelity {stats['fidelity']}/{stats['n']} "
-              f"({100*stats['fidelity']/stats['n']:.0f}%)  "
-              f"skipped {stats['skipped']}")
+        print(
+            f"{name:30s} parse {stats['parse']}/{stats['n']} "
+            f"({100 * stats['parse'] / stats['n']:.0f}%)  "
+            f"fidelity {stats['fidelity']}/{stats['n']} "
+            f"({100 * stats['fidelity'] / stats['n']:.0f}%)  "
+            f"skipped {stats['skipped']}"
+        )
 
     gate = None
     if args.gate:
@@ -321,11 +390,16 @@ def run_eval(args, model, tok, generate, stack: str, extra_payload: dict | None 
         print_gate(gate)
 
     if args.out:
-        write_results_json(args.out, {
-            "stack": stack, **(extra_payload or {}),
-            "n_per_group": args.n, "seed": args.seed,
-            "groups": {name: stats for name, stats in results},
-            "gate": gate,
-        })
+        write_results_json(
+            args.out,
+            {
+                "stack": stack,
+                **(extra_payload or {}),
+                "n_per_group": args.n,
+                "seed": args.seed,
+                "groups": {name: stats for name, stats in results},
+                "gate": gate,
+            },
+        )
 
     return 1 if (gate and gate.get("passed") is False) else 0

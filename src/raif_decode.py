@@ -32,9 +32,16 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any, Optional
+from typing import Any
 
-__all__ = ["decode", "decode_lenient", "parse_schema", "RaifSchema", "SchemaNode", "RaifError"]
+__all__ = [
+    "decode",
+    "decode_lenient",
+    "parse_schema",
+    "RaifSchema",
+    "SchemaNode",
+    "RaifError",
+]
 
 OPEN = "<<<"
 CLOSE = ">>>"
@@ -57,10 +64,36 @@ def _strip_cr(line: str) -> str:
 # (U+FEFF) that Python leaves as data. Decode structure trims and blank-line
 # tests must use this set, not Python's, to match the canonical decoder.
 _JS_WS = "".join(
-    map(chr, [0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0xA0, 0x1680,
-              0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007,
-              0x2008, 0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000,
-              0xFEFF])
+    map(
+        chr,
+        [
+            0x09,
+            0x0A,
+            0x0B,
+            0x0C,
+            0x0D,
+            0x20,
+            0xA0,
+            0x1680,
+            0x2000,
+            0x2001,
+            0x2002,
+            0x2003,
+            0x2004,
+            0x2005,
+            0x2006,
+            0x2007,
+            0x2008,
+            0x2009,
+            0x200A,
+            0x2028,
+            0x2029,
+            0x202F,
+            0x205F,
+            0x3000,
+            0xFEFF,
+        ],
+    )
 )
 # Same set as a regex character-class body (for patterns that used `\s`).
 _WS = "[\t\n\x0b\x0c\r \xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]"
@@ -97,7 +130,7 @@ def _parse_number(raw: str) -> Any:
 # ─── Decoder entry points ───────────────────────────────────────────────────
 
 
-def decode(text: str, schema: Optional[Any] = None) -> dict:
+def decode(text: str, schema: Any | None = None) -> dict:
     """RAIF → JSON. Returns `{"ok": True, "value", "repairs"}` on success or
     `{"ok": False, "error", "repairs"}` on an unrepairable input. `repairs` is
     a list of `{"kind", "detail"?}` dicts — the same shape the TS decoder emits
@@ -111,7 +144,7 @@ def decode(text: str, schema: Optional[Any] = None) -> dict:
         return {"ok": False, "error": str(e), "repairs": repairs}
 
 
-def decode_lenient(text: str, schema: Optional[Any] = None) -> dict:
+def decode_lenient(text: str, schema: Any | None = None) -> dict:
     """Per-leaf recovery. Never raises: bad leaves are skipped and reported in
     `errors`; every leaf that parses lands in `value`. Returns
     `{"value", "errors", "repairs", "truncated"}`. `truncated` is True when the
@@ -124,7 +157,12 @@ def decode_lenient(text: str, schema: Optional[Any] = None) -> dict:
     leaves = _repair_repeated_keys(leaves, repairs)
     value = _assemble(leaves, repairs, errors, _to_schema(schema))
     truncated = any(r["kind"] in _TRUNCATION_REPAIRS for r in repairs)
-    return {"value": value, "errors": errors, "repairs": repairs, "truncated": truncated}
+    return {
+        "value": value,
+        "errors": errors,
+        "repairs": repairs,
+        "truncated": truncated,
+    }
 
 
 _TRUNCATION_REPAIRS = {
@@ -134,7 +172,7 @@ _TRUNCATION_REPAIRS = {
 }
 
 
-def _pipeline(text: str, repairs: list[dict], schema: Optional["SchemaNode"]) -> dict:
+def _pipeline(text: str, repairs: list[dict], schema: SchemaNode | None) -> dict:
     """Strict decode pipeline (prepare -> parse -> repair keys -> assemble), then the encode round-trip throw-gate. Returns the JSON value."""
     text = _prepare_text(text, repairs)
     leaves = _parse_leaves(text, repairs, None)
@@ -156,7 +194,9 @@ def _check_encodable(value: Any) -> None:
     assembled value. Traversal order (code-point-sorted keys, pre-order DFS)
     matches the encoder's `walk`, so the surfaced key matches too."""
     if isinstance(value, dict):
-        for k in sorted(value.keys()):  # Python str order == TS compareUtf8 (code points)
+        for k in sorted(
+            value.keys()
+        ):  # Python str order == TS compareUtf8 (code points)
             if OPEN in k or CLOSE in k:
                 raise RaifError(
                     f"key contains <<< or >>> which is unsupported in this prototype: {k}"
@@ -346,7 +386,7 @@ _CLOSER_CANDIDATE_RE = re.compile(r"^>>>[0-9a-fA-F]*$")
 
 
 def _parse_leaves(
-    text: str, repairs: list[dict], lenient_errors: Optional[list[dict]]
+    text: str, repairs: list[dict], lenient_errors: list[dict] | None
 ) -> list[dict]:
     """Parse prepared text into leaves (bare/typed/multiline/table/array), running the truncation/nonce/delimiter recovery ladders. Collects per-leaf errors when `lenient_errors` is given, else raises."""
     lines = text.split("\n")
@@ -386,7 +426,10 @@ def _parse_leaves(
                 j += 1
             if not closed:
                 repairs.append(
-                    {"kind": "unterminated_array_closed_at_eof", "detail": f"key '{key}'"}
+                    {
+                        "kind": "unterminated_array_closed_at_eof",
+                        "detail": f"key '{key}'",
+                    }
                 )
             leaves.append({"key": key, "body": {"kind": "array_literal", "rows": rows}})
             i = j + 1 if closed else j
@@ -405,13 +448,16 @@ def _parse_leaves(
             if j < n:
                 structural(lines[j])  # record CR repair if the closer carried one
                 leaves.append(
-                    {"key": key, "body": {"kind": "multiline", "raw": "\n".join(content)}}
+                    {
+                        "key": key,
+                        "body": {"kind": "multiline", "raw": "\n".join(content)},
+                    }
                 )
                 i = j + 1
                 continue
             # No exact closer — recovery ladder.
             candidates = _closer_candidates(lines, i + 1)
-            recovered: Optional[int] = None
+            recovered: int | None = None
             if len(candidates) == 1:
                 recovered = candidates[0]
             elif len(candidates) > 1 and len(nonce) > 0:
@@ -448,10 +494,16 @@ def _parse_leaves(
                 continue
             if len(candidates) == 0:
                 repairs.append(
-                    {"kind": "unterminated_block_closed_at_eof", "detail": f"key '{key}'"}
+                    {
+                        "kind": "unterminated_block_closed_at_eof",
+                        "detail": f"key '{key}'",
+                    }
                 )
                 leaves.append(
-                    {"key": key, "body": {"kind": "multiline", "raw": "\n".join(content)}}
+                    {
+                        "key": key,
+                        "body": {"kind": "multiline", "raw": "\n".join(content)},
+                    }
                 )
                 i = n
                 continue
@@ -500,7 +552,7 @@ def _parse_leaves(
 
 def _find_relaxed_closer(
     lines: list[str], opener_idx: int, nonce: str
-) -> Optional[tuple[int, int]]:
+) -> tuple[int, int] | None:
     """Find a downstream `>{1,3}NONCE` closer for a relaxed/short opener; returns (line index, closer length) or None."""
     for j in range(opener_idx + 1, len(lines)):
         cm = _RELAXED_CLOSER_RE.match(_strip_cr(lines[j]))
@@ -512,7 +564,9 @@ def _find_relaxed_closer(
 def _closer_candidates(lines: list[str], frm: int) -> list[int]:
     """Indices of downstream lines shaped like a `>>>hex` closer (mismatched-nonce recovery candidates)."""
     return [
-        k for k in range(frm, len(lines)) if _CLOSER_CANDIDATE_RE.match(_strip_cr(lines[k]))
+        k
+        for k in range(frm, len(lines))
+        if _CLOSER_CANDIDATE_RE.match(_strip_cr(lines[k]))
     ]
 
 
@@ -566,11 +620,17 @@ def _parse_single_line_leaf(
         if typed:
             return {
                 "key": key,
-                "body": {"kind": "typed", "type": typed.group(1), "raw": typed.group(2)},
+                "body": {
+                    "kind": "typed",
+                    "type": typed.group(1),
+                    "raw": typed.group(2),
+                },
             }
         # Stray `:` used as the KV separator — coerce when unambiguous (the
         # suffix does not look like a typed-leaf prefix).
-        repairs.append({"kind": "separator_coerced", "detail": f"':' → '=' at line {line_num}"})
+        repairs.append(
+            {"kind": "separator_coerced", "detail": f"':' → '=' at line {line_num}"}
+        )
         table_row = _INDEXED_KEY_RE.match(key)
         if table_row and table_row.group(1) in table_cols:
             cells = _split_top_level_commas(rest)
@@ -655,8 +715,12 @@ def _repair_repeated_keys(leaves: list[dict], repairs: list[dict]) -> list[dict]
         index_counter[leaf["key"]] = idx + 1
         out.append({"key": f"{leaf['key']}[{idx}]", "body": leaf["body"]})
     repairs.append(
-        {"kind": "repeated_keys_indexed",
-         "detail": ",".join(sorted(repeated_keys, key=lambda s: s.encode("utf-16-be")))}
+        {
+            "kind": "repeated_keys_indexed",
+            "detail": ",".join(
+                sorted(repeated_keys, key=lambda s: s.encode("utf-16-be"))
+            ),
+        }
     )
     return out
 
@@ -687,15 +751,15 @@ _TABLE_ROW_RE = re.compile(rf"^({_NN}+)\[(\d+)\]$", re.ASCII)
 
 def _assemble(
     leaves: list[dict],
-    repairs: Optional[list[dict]],
-    lenient_errors: Optional[list[dict]],
-    schema: Optional["SchemaNode"],
+    repairs: list[dict] | None,
+    lenient_errors: list[dict] | None,
+    schema: SchemaNode | None,
 ) -> dict:
     """Build the JSON value from parsed leaves: resolve paths (schema-aware), decode bodies, insert, then reject sparse arrays / check required fields."""
     root: dict = {}
     table_cols_by_key: dict[str, list[str]] = {}
 
-    def resolve_leaf(key: str) -> tuple[list, Optional["SchemaNode"]]:
+    def resolve_leaf(key: str) -> tuple[list, SchemaNode | None]:
         """Resolve a leaf key to (path segments, schema node), with pathological-flat-key recovery."""
         path = _parse_path(key)
         if schema is None:
@@ -759,7 +823,9 @@ def _assemble(
                         and node is not OPEN_NODE
                         and cell_node is None
                     ):
-                        raise RaifError(f"schema: unknown column '{c}' at '{leaf['key']}'")
+                        raise RaifError(
+                            f"schema: unknown column '{c}' at '{leaf['key']}'"
+                        )
                     row_obj[c] = _decode_bare_value(cells[idx], repairs, cell_node)
                 _insert(root, path, row_obj)
                 continue
@@ -783,7 +849,9 @@ def _assemble(
             if lenient_errors is None:
                 raise RaifError(err)
             for m in missing:
-                lenient_errors.append({"key": m, "error": "schema: missing required field"})
+                lenient_errors.append(
+                    {"key": m, "error": "schema: missing required field"}
+                )
     return root
 
 
@@ -795,7 +863,9 @@ def _prune_sparse_arrays(obj: dict, errors: list[dict], path: str) -> None:
         if isinstance(v, list):
             if _contains_missing(v):
                 del obj[k]
-                errors.append({"key": p, "error": f"sparse array under '{p}' — subtree dropped"})
+                errors.append(
+                    {"key": p, "error": f"sparse array under '{p}' — subtree dropped"}
+                )
         elif v is not None and isinstance(v, dict):
             _prune_sparse_arrays(v, errors, p)
 
@@ -814,7 +884,9 @@ def _contains_missing(node: Any) -> bool:
 # ─── Value decoding ─────────────────────────────────────────────────────────
 
 
-def _decode_bare_value(raw: str, repairs: Optional[list[dict]], node: Optional["SchemaNode"]) -> Any:
+def _decode_bare_value(
+    raw: str, repairs: list[dict] | None, node: SchemaNode | None
+) -> Any:
     """Decode a bare value (leaf RHS or cell) by schema type when given, else by value-shape inference."""
     if node is None or node is OPEN_NODE:
         return _decode_inferred(raw, repairs)
@@ -823,9 +895,13 @@ def _decode_bare_value(raw: str, repairs: Optional[list[dict]], node: Optional["
     return _decode_schema_typed(raw, node, repairs)
 
 
-def _decode_inferred(raw: str, repairs: Optional[list[dict]]) -> Any:
+def _decode_inferred(raw: str, repairs: list[dict] | None) -> Any:
     """Infer a bare value with no schema: unwrap `<<<...>>>`, JSON literals, numbers, inline objects, else a bare string."""
-    if raw.startswith(OPEN) and raw.endswith(CLOSE) and len(raw) >= len(OPEN) + len(CLOSE):
+    if (
+        raw.startswith(OPEN)
+        and raw.endswith(CLOSE)
+        and len(raw) >= len(OPEN) + len(CLOSE)
+    ):
         return raw[len(OPEN) : len(raw) - len(CLOSE)]
     if raw == "true":
         return True
@@ -846,9 +922,13 @@ def _decode_inferred(raw: str, repairs: Optional[list[dict]]) -> Any:
     return raw
 
 
-def _decode_schema_typed(raw: str, node: "SchemaNode", repairs: Optional[list[dict]]) -> Any:
+def _decode_schema_typed(raw: str, node: SchemaNode, repairs: list[dict] | None) -> Any:
     """Decode a value against its schema node (ADR-0019): `s`/`t` verbatim, `n`/`b` must parse, `o`/structured fall through to inference."""
-    wrapped = raw.startswith(OPEN) and raw.endswith(CLOSE) and len(raw) >= len(OPEN) + len(CLOSE)
+    wrapped = (
+        raw.startswith(OPEN)
+        and raw.endswith(CLOSE)
+        and len(raw) >= len(OPEN) + len(CLOSE)
+    )
     inner = raw[len(OPEN) : len(raw) - len(CLOSE)] if wrapped else raw
     t = node.type
     if t in ("s", "t"):
@@ -883,8 +963,8 @@ def _decode_schema_typed(raw: str, node: "SchemaNode", repairs: Optional[list[di
 
 
 def _try_parse_inline_object(
-    s: str, repairs: Optional[list[dict]], node: Optional["SchemaNode"]
-) -> Optional[dict]:
+    s: str, repairs: list[dict] | None, node: SchemaNode | None
+) -> dict | None:
     """Parse `{k=v,...}` into a dict, or None if it doesn't match the inline-object grammar; records the nested-flatten repair."""
     if s == "{}":
         return {}
@@ -998,7 +1078,9 @@ def _consume_segment_boundary(key: str, pos: int) -> int:
     raise RaifError(f"malformed path after segment in: {key}")
 
 
-def _decode_body(body: dict, repairs: Optional[list[dict]], node: Optional["SchemaNode"]) -> Any:
+def _decode_body(
+    body: dict, repairs: list[dict] | None, node: SchemaNode | None
+) -> Any:
     """Decode a parsed leaf body (multiline/typed/bare) to a JSON value, honoring the schema node when present."""
     kind = body["kind"]
     if kind == "multiline":
@@ -1007,7 +1089,9 @@ def _decode_body(body: dict, repairs: Optional[list[dict]], node: Optional["Sche
             and node is not OPEN_NODE
             and node.type not in ("s", "t", "o")
         ):
-            raise RaifError(f"schema: multiline block where {_expected_kind(node)} expected")
+            raise RaifError(
+                f"schema: multiline block where {_expected_kind(node)} expected"
+            )
         return body["raw"]
     if kind == "typed":
         if node is not None and node is not OPEN_NODE:
@@ -1028,7 +1112,7 @@ def _decode_body(body: dict, repairs: Optional[list[dict]], node: Optional["Sche
     raise RaifError(f"internal: _decode_body called on {kind}")
 
 
-def _expected_kind(node: "SchemaNode") -> str:
+def _expected_kind(node: SchemaNode) -> str:
     """Human-readable expected kind of a schema node (array/object/type) for error messages."""
     if node.element is not None:
         return "array"
@@ -1039,7 +1123,11 @@ def _expected_kind(node: "SchemaNode") -> str:
 
 def _unwrap_delim(raw: str) -> str:
     """Strip one `<<<...>>>` wrapper if present, else return the string unchanged."""
-    if raw.startswith(OPEN) and raw.endswith(CLOSE) and len(raw) >= len(OPEN) + len(CLOSE):
+    if (
+        raw.startswith(OPEN)
+        and raw.endswith(CLOSE)
+        and len(raw) >= len(OPEN) + len(CLOSE)
+    ):
         return raw[len(OPEN) : len(raw) - len(CLOSE)]
     return raw
 
@@ -1053,33 +1141,42 @@ def _insert(root: dict, path: list[dict], value: Any) -> None:
         child_init: Any = [] if nxt["kind"] == "index" else {}
         if seg["kind"] == "key":
             if isinstance(cursor, list):
-                raise RaifError(f"path collision: list expected dict-key '{seg['name']}'")
+                raise RaifError(
+                    f"path collision: list expected dict-key '{seg['name']}'"
+                )
             existing = cursor.get(seg["name"], None) if seg["name"] in cursor else None
             if seg["name"] not in cursor:
                 cursor[seg["name"]] = child_init
                 cursor = child_init
-            elif isinstance(existing, list) and nxt["kind"] == "index":
-                cursor = existing
             elif (
-                isinstance(existing, dict)
-                and existing is not None
-                and nxt["kind"] == "key"
+                isinstance(existing, list)
+                and nxt["kind"] == "index"
+                or (
+                    isinstance(existing, dict)
+                    and existing is not None
+                    and nxt["kind"] == "key"
+                )
             ):
                 cursor = existing
             else:
                 raise RaifError(f"path collision at '{seg['name']}'")
         else:
             if not isinstance(cursor, list):
-                raise RaifError(f"path collision: dict expected list-index {seg['idx']}")
+                raise RaifError(
+                    f"path collision: dict expected list-index {seg['idx']}"
+                )
             while len(cursor) <= seg["idx"]:
                 cursor.append(MISSING)
             existing = cursor[seg["idx"]]
             if existing is MISSING:
                 cursor[seg["idx"]] = child_init
                 cursor = child_init
-            elif isinstance(existing, list) and nxt["kind"] == "index":
-                cursor = existing
-            elif isinstance(existing, dict) and nxt["kind"] == "key":
+            elif (
+                isinstance(existing, list)
+                and nxt["kind"] == "index"
+                or isinstance(existing, dict)
+                and nxt["kind"] == "key"
+            ):
                 cursor = existing
             else:
                 raise RaifError(f"path collision at index {seg['idx']}")
@@ -1105,7 +1202,9 @@ def _validate_no_missing(node: Any, path: str) -> None:
     if isinstance(node, list):
         for i, v in enumerate(node):
             if v is MISSING:
-                raise RaifError(f"sparse array at {path}[{i}] — RAIF rejects sparse arrays")
+                raise RaifError(
+                    f"sparse array at {path}[{i}] — RAIF rejects sparse arrays"
+                )
             _validate_no_missing(v, f"{path}[{i}]")
     elif node is not None and isinstance(node, dict):
         for k, v in node.items():
@@ -1120,10 +1219,10 @@ class SchemaNode:
 
     def __init__(self, optional: bool = False):
         """Initialize the node/schema container."""
-        self.type: Optional[str] = None
+        self.type: str | None = None
         self.optional: bool = optional
-        self.element: Optional["SchemaNode"] = None
-        self.children: Optional[dict[str, "SchemaNode"]] = None
+        self.element: SchemaNode | None = None
+        self.children: dict[str, SchemaNode] | None = None
 
 
 # Sentinel: a node declared `:o` accepts arbitrary children with inferred types.
@@ -1160,7 +1259,7 @@ def parse_schema(decl: str) -> RaifSchema:
             raise at(f"missing ':' in '{line}'")
         tm = _SCHEMA_TYPE_RE.match(_js_strip(line[sep + 1 :]))
         if not tm:
-            raise at(f"bad type '{_js_strip(line[sep + 1:])}'")
+            raise at(f"bad type '{_js_strip(line[sep + 1 :])}'")
         segs = _parse_schema_path(_js_strip(line[:sep]), at)
         node = root
         field = root
@@ -1219,7 +1318,7 @@ def _parse_schema_path(path: str, at) -> list[dict]:
     return segs
 
 
-def _to_schema(schema: Optional[Any]) -> Optional[SchemaNode]:
+def _to_schema(schema: Any | None) -> SchemaNode | None:
     """Coerce a schema argument (declaration string / RaifSchema / SchemaNode / None) to a root SchemaNode."""
     if schema is None:
         return None
@@ -1232,7 +1331,7 @@ def _to_schema(schema: Optional[Any]) -> Optional[SchemaNode]:
     raise RaifError("schema must be a declaration string, RaifSchema, or SchemaNode")
 
 
-def _resolve_node(node: Optional[SchemaNode], segs: list[dict]) -> Optional[SchemaNode]:
+def _resolve_node(node: SchemaNode | None, segs: list[dict]) -> SchemaNode | None:
     """Walk a parsed leaf path through the schema; returns the node, OPEN_NODE under `:o`, or None if not admitted."""
     cur = node
     for seg in segs:
@@ -1250,7 +1349,7 @@ def _resolve_node(node: Optional[SchemaNode], segs: list[dict]) -> Optional[Sche
     return cur
 
 
-def _child_node(node: Optional[SchemaNode], key: str) -> Optional[SchemaNode]:
+def _child_node(node: SchemaNode | None, key: str) -> SchemaNode | None:
     """Schema node for a named cell (inline-object pair or table column)."""
     if node is None:
         return None
@@ -1262,7 +1361,9 @@ def _child_node(node: Optional[SchemaNode], key: str) -> Optional[SchemaNode]:
     return child
 
 
-def _check_required(node: SchemaNode, value: Any, path: str, missing: list[str]) -> None:
+def _check_required(
+    node: SchemaNode, value: Any, path: str, missing: list[str]
+) -> None:
     """After assembly, collect every non-optional declared field that is absent."""
     if value is None or node is OPEN_NODE:
         return

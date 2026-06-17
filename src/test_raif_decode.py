@@ -139,7 +139,9 @@ def run_parity(raifs: list[str], label: str) -> int:
 def main() -> int:
     """Run crafted + corpus parity against the canonical decoder; return the process exit code."""
     if not available():
-        print("SKIP: bun and/or raif-standard prototype not available — parity not checked.")
+        print(
+            "SKIP: bun and/or raif-standard prototype not available — parity not checked."
+        )
         return 0
 
     total_mismatch = 0
@@ -156,7 +158,9 @@ def main() -> int:
 
     n = len(CRAFTED) + len(corpus)
     if total_mismatch == 0:
-        print(f"\nPASS — Python decoder matches canonical TS decoder on all {n} inputs.")
+        print(
+            f"\nPASS — Python decoder matches canonical TS decoder on all {n} inputs."
+        )
         return 0
     print(f"\nFAIL — {total_mismatch}/{n} inputs diverged.")
     return 1
