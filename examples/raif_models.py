@@ -23,8 +23,13 @@ REPO = Path(__file__).resolve().parent.parent
 
 # Every full-reg adapter targets all 7 projections on every layer.
 LORA_KEYS = [
-    "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj",
-    "mlp.gate_proj", "mlp.up_proj", "mlp.down_proj",
+    "self_attn.q_proj",
+    "self_attn.k_proj",
+    "self_attn.v_proj",
+    "self_attn.o_proj",
+    "mlp.gate_proj",
+    "mlp.up_proj",
+    "mlp.down_proj",
 ]
 
 MODELS: dict[str, dict] = {
@@ -112,10 +117,19 @@ def convert_to_mlx(peft_dir: Path, out_dir: Path, scale: float = 2.0) -> int:
     num_layers = max(int(re.search(r"layers\.(\d+)\.", k).group(1)) for k in out) + 1
     out_dir.mkdir(parents=True, exist_ok=True)
     sn.save_file(out, str(out_dir / "adapters.safetensors"))
-    (out_dir / "adapter_config.json").write_text(json.dumps({
-        "fine_tune_type": "lora",
-        "num_layers": num_layers,
-        "lora_parameters": {"rank": 32, "scale": scale, "dropout": 0.05,
-                            "keys": LORA_KEYS},
-    }, indent=2))
+    (out_dir / "adapter_config.json").write_text(
+        json.dumps(
+            {
+                "fine_tune_type": "lora",
+                "num_layers": num_layers,
+                "lora_parameters": {
+                    "rank": 32,
+                    "scale": scale,
+                    "dropout": 0.05,
+                    "keys": LORA_KEYS,
+                },
+            },
+            indent=2,
+        )
+    )
     return num_layers

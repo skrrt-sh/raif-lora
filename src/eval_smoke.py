@@ -37,6 +37,7 @@ def select_adapter_checkpoint(adapter_dir: Path, label: str) -> Path:
     dir alongside the same adapter_config.json.
     """
     import shutil
+
     if label == "latest":
         return adapter_dir
     src = adapter_dir / f"{int(label):07d}_adapters.safetensors"
@@ -51,17 +52,22 @@ def select_adapter_checkpoint(adapter_dir: Path, label: str) -> Path:
 
 def main() -> int:
     """Load the MLX base model + adapter checkpoint, then run the shared eval driver."""
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--adapter", required=True,
-                   help="path to adapter dir (e.g. ./adapters/llama-3-3b-raif-sft-warm)")
-    p.add_argument("--checkpoint", default="latest",
-                   help="'latest' or an iter number like '1500'")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--adapter",
+        required=True,
+        help="path to adapter dir (e.g. ./adapters/llama-3-3b-raif-sft-warm)",
+    )
+    p.add_argument(
+        "--checkpoint", default="latest", help="'latest' or an iter number like '1500'"
+    )
     add_common_eval_args(p)
     args = p.parse_args()
 
     # Heavy imports deferred so `--help` works without model deps loaded.
-    from mlx_lm import load, generate
+    from mlx_lm import generate, load
     from mlx_lm.utils import load_adapters
 
     print(f"Loading base model from {MODEL_PATH}...")
@@ -71,9 +77,14 @@ def main() -> int:
     model = load_adapters(model, str(adapter_dir))
     model.eval()
 
-    return run_eval(args, model, tok, generate, stack="mlx",
-                    extra_payload={"adapter": str(args.adapter),
-                                   "checkpoint": args.checkpoint})
+    return run_eval(
+        args,
+        model,
+        tok,
+        generate,
+        stack="mlx",
+        extra_payload={"adapter": str(args.adapter), "checkpoint": args.checkpoint},
+    )
 
 
 if __name__ == "__main__":

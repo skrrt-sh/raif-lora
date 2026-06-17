@@ -78,8 +78,7 @@ class MeterOracle(unittest.TestCase):
         # repairs, or the 98% parse gate is softer than it looks.
         examples = stratified_examples(3)
         outputs = [
-            "I'm sorry, here is your object: it has three fields."
-            for _ in examples
+            "I'm sorry, here is your object: it has three fields." for _ in examples
         ]
         stats = eval_core.eval_group(
             "oracle-refusal", examples, None, FakeTok(), make_generate(outputs)
@@ -96,8 +95,7 @@ class MeterOracle(unittest.TestCase):
         # outputs without the block (Llama, Qwen2.5).
         examples = stratified_examples(3)
         outputs = [
-            "<think>\n\n</think>\n\n" + ex["messages"][1]["content"]
-            for ex in examples
+            "<think>\n\n</think>\n\n" + ex["messages"][1]["content"] for ex in examples
         ]
         stats = eval_core.eval_group(
             "oracle-think", examples, None, FakeTok(), make_generate(outputs)
@@ -126,10 +124,12 @@ class EvalDriver(unittest.TestCase):
     def _args(self, **over):
         """Build a minimal run_eval args namespace, overriding fields via kwargs."""
         base = dict(
-            n=2, seed=0,
+            n=2,
+            seed=0,
             valid=Path("/nonexistent_valid.jsonl"),
             holdout=Path("/nonexistent_holdout.jsonl"),
-            out=None, gate=None,
+            out=None,
+            gate=None,
         )
         base.update(over)
         return argparse.Namespace(**base)
@@ -153,8 +153,12 @@ class EvalDriver(unittest.TestCase):
         """--out writes a JSON payload carrying the stack label + extra_payload fields."""
         out = Path(self.enterContext(tempfile.TemporaryDirectory())) / "r.json"
         eval_core.run_eval(
-            self._args(out=out), None, FakeTok(), make_generate([]),
-            stack="cuda", extra_payload={"adapter": "./adapters-cuda/x"},
+            self._args(out=out),
+            None,
+            FakeTok(),
+            make_generate([]),
+            stack="cuda",
+            extra_payload={"adapter": "./adapters-cuda/x"},
         )
         payload = json.loads(out.read_text())
         self.assertEqual(payload["stack"], "cuda")

@@ -50,7 +50,9 @@ def _run(spec: dict) -> list[dict]:
     return run_bridge(_BRIDGE, spec, timeout=max(120, len(spec["items"]) // 50 + 60))
 
 
-def js_encode(objs: list, profile: str = "canonical", markers: bool = False) -> list[dict]:
+def js_encode(
+    objs: list, profile: str = "canonical", markers: bool = False
+) -> list[dict]:
     """Encode JSON objects → `[{ok, raif} | {ok: False, error}]`."""
     if not objs:
         return []
@@ -84,5 +86,7 @@ def values_equal(a, b) -> bool:
             return False
         return all(values_equal(a[k], b[k]) for k in a)
     if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(values_equal(x, y) for x, y in zip(a, b, strict=True))
+        return len(a) == len(b) and all(
+            values_equal(x, y) for x, y in zip(a, b, strict=True)
+        )
     return a == b

@@ -15,8 +15,8 @@
 //     ambiguity stays polynomial, never exponential.
 // Not a full GBNF implementation (no {m,n} repetition, no 8-hex escapes).
 
-import { corpus } from "../../raif-standard/prototype/src/corpus.ts";
-import { encode } from "../../raif-standard/prototype/src/raif.ts";
+import { corpus } from "../../raif-standard/packages/js/bench/corpus.ts";
+import { encode } from "../../raif-standard/packages/js/src/raif.ts";
 
 // ─── GBNF parsing ───────────────────────────────────────────────────────────
 
@@ -70,8 +70,7 @@ function stripComments(text: string): string {
 function splitRuleBlocks(text: string): Array<{ name: string; body: string }> {
   const re = /(?:^|\n)[ \t]*([a-zA-Z][a-zA-Z0-9-]*)[ \t]*::=/g;
   const hits: Array<{ name: string; bodyStart: number; matchStart: number }> = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) {
     hits.push({ name: m[1]!, bodyStart: m.index + m[0].length, matchStart: m.index });
   }
   return hits.map((h, i) => ({
@@ -94,7 +93,9 @@ class BodyParser {
     const alts = this.parseAlternates();
     this.skipWs();
     if (this.pos < this.src.length) {
-      throw new Error(`rule ${this.rule}: trailing junk: ${JSON.stringify(this.src.slice(this.pos, this.pos + 20))}`);
+      throw new Error(
+        `rule ${this.rule}: trailing junk: ${JSON.stringify(this.src.slice(this.pos, this.pos + 20))}`,
+      );
     }
     for (const rhs of alts) this.prods.push({ lhs: this.rule, rhs });
   }
@@ -125,7 +126,8 @@ class BodyParser {
       else if (c === "[") item = [this.parseClass()];
       else if (c === "(") item = [this.parseGroup()];
       else if (/[a-zA-Z]/.test(c)) item = [this.parseRef()];
-      else throw new Error(`rule ${this.rule}: unexpected ${JSON.stringify(c)} at offset ${this.pos}`);
+      else
+        throw new Error(`rule ${this.rule}: unexpected ${JSON.stringify(c)} at offset ${this.pos}`);
       syms.push(...this.applyPostfix(item));
     }
     return syms;
@@ -169,7 +171,8 @@ class BodyParser {
     }
     const ranges: Array<[number, number]> = [];
     while (this.src[this.pos] !== "]") {
-      if (this.pos >= this.src.length) throw new Error(`rule ${this.rule}: unterminated char class`);
+      if (this.pos >= this.src.length)
+        throw new Error(`rule ${this.rule}: unterminated char class`);
       const lo = this.readChar();
       let hi = lo;
       if (this.src[this.pos] === "-" && this.src[this.pos + 1] !== "]") {
@@ -208,15 +211,24 @@ class BodyParser {
     const e = this.src[this.pos + 1]!;
     this.pos += 2;
     switch (e) {
-      case "n": return 10;
-      case "r": return 13;
-      case "t": return 9;
-      case "\\": return 92;
-      case '"': return 34;
-      case "[": return 91;
-      case "]": return 93;
-      case "^": return 94;
-      case "-": return 45;
+      case "n":
+        return 10;
+      case "r":
+        return 13;
+      case "t":
+        return 9;
+      case "\\":
+        return 92;
+      case '"':
+        return 34;
+      case "[":
+        return 91;
+      case "]":
+        return 93;
+      case "^":
+        return 94;
+      case "-":
+        return 45;
       case "x": {
         const h = this.src.slice(this.pos, this.pos + 2);
         this.pos += 2;
@@ -297,7 +309,10 @@ function compile(prods: Prod[], root = "root"): (input: string) => boolean {
           const sym = rhs[it.dot]!;
           if (sym.kind === "ref") {
             let w = wants[i]!.get(sym.name);
-            if (!w) wants[i]!.set(sym.name, (w = []));
+            if (!w) {
+              w = [];
+              wants[i]!.set(sym.name, w);
+            }
             w.push(it);
             for (const p of byLhs.get(sym.name)!) add(i, p, 0, i);
             if (done[i]!.has(sym.name)) add(i, it.prod, it.dot + 1, it.origin);
@@ -341,7 +356,11 @@ for (const entry of corpus) check(entry.name, encode(entry.json), true);
 
 console.log("── corpus encodings, generation profile (ADR-0019) ──");
 for (const entry of corpus) {
-  check(`${entry.name} (generation+markers)`, encode(entry.json, { profile: "generation", markers: true }), true);
+  check(
+    `${entry.name} (generation+markers)`,
+    encode(entry.json, { profile: "generation", markers: true }),
+    true,
+  );
 }
 check("glued marker is not framing", "s=</raif>", true); // a value, not a marker
 
@@ -355,10 +374,19 @@ const handPositives: Array<[string, string]> = [
   ["wrapped key segment mid-path", "user.<<<a.b>>>=1"],
   ["wrapped key with index", "<<<k>>>[0]=1"],
   ["bare multiline block", "body=<<<\nHello,\n\nworld\n>>>"],
-  ["nonce multiline w/ literal >>> content line", "body=<<<7f2a\nHello,\n\n>>>\nthat line was a literal closer\n>>>7f2a"],
+  [
+    "nonce multiline w/ literal >>> content line",
+    "body=<<<7f2a\nHello,\n\n>>>\nthat line was a literal closer\n>>>7f2a",
+  ],
   ["inline object with wrapped key", "mixed[0]={<<<user.email>>>=x@y.z,role=admin}"],
-  ["table header + rows incl. wrapped cell", "items::id,name\nitems[0]=1,<<<a,b>>>\nitems[1]=2,bar"],
-  ["array literal w/ inline obj, wrapped ] row, number", "events=[\n{type=click,target=a.cta}\n<<<]>>>\n42\n]"],
+  [
+    "table header + rows incl. wrapped cell",
+    "items::id,name\nitems[0]=1,<<<a,b>>>\nitems[1]=2,bar",
+  ],
+  [
+    "array literal w/ inline obj, wrapped ] row, number",
+    "events=[\n{type=click,target=a.cta}\n<<<]>>>\n42\n]",
+  ],
   ["typed separators", "id:s=42\nflag:b=true\ncount:n=0\nnote:t=hi"],
   ["wrapped empty string value", "s=<<<>>>"],
   ["wrapped cell with trailing > merge", "row={a=<<<x,>>>>}"],
@@ -376,5 +404,7 @@ const negatives: Array<[string, string]> = [
 ];
 for (const [label, input] of negatives) check(label, input, false);
 
-console.log(`\n${total - failures}/${total} checks passed` + (failures ? ` — ${failures} FAILED` : ""));
+console.log(
+  `\n${total - failures}/${total} checks passed${failures ? ` — ${failures} FAILED` : ""}`,
+);
 process.exit(failures ? 1 : 0);

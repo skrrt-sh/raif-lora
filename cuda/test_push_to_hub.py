@@ -12,7 +12,9 @@ from pathlib import Path
 
 import push_to_hub
 
-_NO_ADAPTER = Path("/nonexistent-adapter")  # load_json returns None → card uses defaults
+_NO_ADAPTER = Path(
+    "/nonexistent-adapter"
+)  # load_json returns None → card uses defaults
 
 
 def test_llama_base_gets_llama_license():

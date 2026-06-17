@@ -24,56 +24,55 @@ const ADAPTER = process.env.RAIF_ADAPTER ?? "./adapters/llama-3b-mlx";
 
 // Inject the MLX adapter path into every request body (see header note).
 const injectAdapter: typeof fetch = async (url, options) => {
-	if (options?.body && typeof options.body === "string") {
-		const body = JSON.parse(options.body);
-		body.adapters = ADAPTER;
-		options = { ...options, body: JSON.stringify(body) };
-	}
-	return fetch(url, options);
+  if (options?.body && typeof options.body === "string") {
+    const body = JSON.parse(options.body);
+    body.adapters = ADAPTER;
+    options = { ...options, body: JSON.stringify(body) };
+  }
+  return fetch(url, options);
 };
 
 const mlx = createOpenAICompatible({
-	name: "mlx-raif",
-	baseURL: BASE_URL,
-	fetch: injectAdapter,
+  name: "mlx-raif",
+  baseURL: BASE_URL,
+  fetch: injectAdapter,
 });
 
 async function toRaif(payload: unknown): Promise<string> {
-	const { text } = await generateText({
-		model: mlx("default_model"),
-		temperature: 0,
-		maxOutputTokens: 1024,
-		prompt: `Rewrite this JSON payload as RAIF:\n${JSON.stringify(payload)}`,
-	});
-	return text.trim();
+  const { text } = await generateText({
+    model: mlx("default_model"),
+    temperature: 0,
+    maxOutputTokens: 1024,
+    prompt: `Rewrite this JSON payload as RAIF:\n${JSON.stringify(payload)}`,
+  });
+  return text.trim();
 }
 
 async function main() {
-	const payload = {
-		user: "ada",
-		tasks: ["write", "test", "ship"],
-		done: false,
-		count: 3,
-	};
+  const payload = {
+    user: "ada",
+    tasks: ["write", "test", "ship"],
+    done: false,
+    count: 3,
+  };
 
-	console.log("→ input JSON:", JSON.stringify(payload));
-	const raif = await toRaif(payload);
-	console.log(`\n── RAIF (model output) ──\n ${raif}`);
+  console.log("→ input JSON:", JSON.stringify(payload));
+  const raif = await toRaif(payload);
+  console.log(`\n── RAIF (model output) ──\n ${raif}`);
 
-	const result = decode(raif);
-	console.log("\n── decode() → JSON ──");
-	if (result.ok) {
-		console.log(JSON.stringify(result.value, null, 2));
-		const repairs = result.repairs ?? [];
-		if (repairs.length)
-			console.log(`(recovered via ${repairs.length} repair(s))`);
-	} else {
-		console.error("decode failed:", result.error);
-		process.exit(1);
-	}
+  const result = decode(raif);
+  console.log("\n── decode() → JSON ──");
+  if (result.ok) {
+    console.log(JSON.stringify(result.value, null, 2));
+    const repairs = result.repairs ?? [];
+    if (repairs.length) console.log(`(recovered via ${repairs.length} repair(s))`);
+  } else {
+    console.error("decode failed:", result.error);
+    process.exit(1);
+  }
 }
 
 main().catch((err) => {
-	console.error(err);
-	process.exit(1);
+  console.error(err);
+  process.exit(1);
 });

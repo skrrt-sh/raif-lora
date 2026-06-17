@@ -36,10 +36,15 @@ def setup(model: str) -> None:
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", default=M.DEFAULT_MODEL,
-                    choices=[*M.MODELS, "all"], help="which adapter to convert")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--model",
+        default=M.DEFAULT_MODEL,
+        choices=[*M.MODELS, "all"],
+        help="which adapter to convert",
+    )
     args = ap.parse_args()
 
     targets = list(M.MODELS) if args.model == "all" else [args.model]

@@ -36,7 +36,7 @@ def make_hf_generate():
                 do_sample=False,
                 pad_token_id=tok.eos_token_id,
             )
-        new_tokens = out[0][inputs["input_ids"].shape[1]:]
+        new_tokens = out[0][inputs["input_ids"].shape[1] :]
         return tok.decode(new_tokens, skip_special_tokens=True)
 
     return generate
@@ -44,12 +44,18 @@ def make_hf_generate():
 
 def main() -> int:
     """Load the base + adapter via unsloth, then run the shared eval driver."""
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--adapter", required=True,
-                   help="LoRA adapter dir saved by train_unsloth.py")
-    p.add_argument("--max-seq", type=int, default=2048,
-                   help="max sequence length for loading (default 2048)")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--adapter", required=True, help="LoRA adapter dir saved by train_unsloth.py"
+    )
+    p.add_argument(
+        "--max-seq",
+        type=int,
+        default=2048,
+        help="max sequence length for loading (default 2048)",
+    )
     add_common_eval_args(p)
     args = p.parse_args()
 
@@ -57,7 +63,7 @@ def main() -> int:
 
     print(f"Loading base + adapter from {args.adapter}...")
     model, tok = FastLanguageModel.from_pretrained(
-        model_name=args.adapter,     # adapter dir; unsloth resolves the base
+        model_name=args.adapter,  # adapter dir; unsloth resolves the base
         max_seq_length=args.max_seq,
         dtype=None,
         load_in_4bit=False,
@@ -65,8 +71,14 @@ def main() -> int:
     FastLanguageModel.for_inference(model)
 
     generate = make_hf_generate()
-    return run_eval(args, model, tok, generate, stack="cuda",
-                    extra_payload={"adapter": str(args.adapter)})
+    return run_eval(
+        args,
+        model,
+        tok,
+        generate,
+        stack="cuda",
+        extra_payload={"adapter": str(args.adapter)},
+    )
 
 
 if __name__ == "__main__":

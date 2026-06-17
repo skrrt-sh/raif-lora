@@ -23,7 +23,9 @@ from pathlib import Path
 
 # Resolve from THIS file so the bridge works regardless of the caller's cwd:
 #   raif-lora/src/raif_bun.py -> scratch/ -> raif-standard/prototype
-PROTOTYPE_DIR = Path(__file__).resolve().parent.parent.parent / "raif-standard" / "prototype"
+PROTOTYPE_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "raif-standard" / "prototype"
+)
 
 # Env var the caller's bun script reads to find its JSON input file.
 INPUT_ENV = "RAIF_BRIDGE_INPUT"
@@ -56,5 +58,7 @@ def run_bridge(script: str, payload, timeout: float) -> list:
     finally:
         os.unlink(tmp)
     if res.returncode != 0:
-        raise RuntimeError(f"bun bridge failed: {res.stderr.decode('utf-8', 'replace')[:1000]}")
+        raise RuntimeError(
+            f"bun bridge failed: {res.stderr.decode('utf-8', 'replace')[:1000]}"
+        )
     return json.loads(res.stdout.decode("utf-8"))

@@ -38,12 +38,20 @@ def license_for(base_model: str) -> dict:
     license. Returned dict feeds the card frontmatter + attribution section."""
     mid = base_model.lower()
     if "qwen" in mid:
-        return {"id": "apache-2.0", "family": "Qwen2.5", "builtwith": "Built with Qwen",
-                "attrib": "Derivative of Qwen2.5 — **Apache-2.0** (the Qwen2.5 small "
-                          "bases are Apache-2.0 licensed)."}
-    return {"id": "llama3.2", "family": "Llama 3.2", "builtwith": "Built with Llama",
-            "attrib": "Derivative of Llama 3.2 — **Llama 3.2 Community License** "
-                      'applies ("Built with Llama").'}
+        return {
+            "id": "apache-2.0",
+            "family": "Qwen2.5",
+            "builtwith": "Built with Qwen",
+            "attrib": "Derivative of Qwen2.5 — **Apache-2.0** (the Qwen2.5 small "
+            "bases are Apache-2.0 licensed).",
+        }
+    return {
+        "id": "llama3.2",
+        "family": "Llama 3.2",
+        "builtwith": "Built with Llama",
+        "attrib": "Derivative of Llama 3.2 — **Llama 3.2 Community License** "
+        'applies ("Built with Llama").',
+    }
 
 
 def build_model_card(adapter: Path, repo: str, base_model: str) -> str:
@@ -64,22 +72,30 @@ def build_model_card(adapter: Path, repo: str, base_model: str) -> str:
         n = stats.get("n", 0)
         if not n:
             continue
-        rows += (f"| {name} | {100*stats['parse']/n:.0f}% | "
-                 f"{100*stats['fidelity']/n:.0f}% | {n} |\n")
+        rows += (
+            f"| {name} | {100 * stats['parse'] / n:.0f}% | "
+            f"{100 * stats['fidelity'] / n:.0f}% | {n} |\n"
+        )
     gate = ev.get("gate") or {}
-    gate_line = ("**Acceptance gate: PASS**" if gate.get("passed")
-                 else "Acceptance gate: not fully met — see the per-group numbers below."
-                 if gate.get("passed") is False else "")
+    gate_line = (
+        "**Acceptance gate: PASS**"
+        if gate.get("passed")
+        else "Acceptance gate: not fully met — see the per-group numbers below."
+        if gate.get("passed") is False
+        else ""
+    )
     lic = license_for(base_model)
-    # The ~10% real-world figure holds across tokenizers (cl100k −9, o200k −10,
-    # Llama −9, Qwen −8, Mistral −8), so every card leads with it (no per-family
-    # hedge). The −14% is the Llama-3.2/cl100k eval-corpus aggregate (table-heavy);
-    # only the Llama card cites it, since Qwen lands nearer −12% there.
-    token_note = ("- Token cost: ~10% fewer than minified JSON on real "
-                  "function-call data; −14% on the table-heavy eval corpus."
-                  if lic["family"].startswith("Llama")
-                  else "- Token cost: ~10% fewer than minified JSON on real "
-                       "function-call data (cross-tokenizer).")
+    # The ~10% real-world figure holds across tokenizers (cl100k -9, o200k -10,
+    # Llama -9, Qwen -8, Mistral -8), so every card leads with it (no per-family
+    # hedge). The -14% is the Llama-3.2/cl100k eval-corpus aggregate (table-heavy);
+    # only the Llama card cites it, since Qwen lands nearer -12% there.
+    token_note = (
+        "- Token cost: ~10% fewer than minified JSON on real "
+        "function-call data; -14% on the table-heavy eval corpus."
+        if lic["family"].startswith("Llama")
+        else "- Token cost: ~10% fewer than minified JSON on real "
+        "function-call data (cross-tokenizer)."
+    )
 
     return f"""---
 base_model: {base_model}
@@ -99,7 +115,7 @@ datasets:
   <img src="banner.jpg" alt="RAIF" width="640">
 </p>
 
-<h1 align="center">{repo.split('/')[-1]}</h1>
+<h1 align="center">{repo.split("/")[-1]}</h1>
 
 <p align="center">
   A LoRA adapter that makes <b>{base_model}</b> emit
@@ -128,12 +144,12 @@ properties to small, local, and self-hosted inference.
 |---|---|
 | base | `{base_model}` |
 | method | LoRA (PEFT) via unsloth |
-| rank / alpha | {hp.get('rank')} / {hp.get('alpha')} |
-| lora_dropout | {hp.get('lora_dropout')} |
-| learning rate | {hp.get('learning_rate')} ({hp.get('lr_scheduler','constant')}) |
-| seq length | {hp.get('max_seq')} |
-| epochs / examples | {data.get('epochs')} / {data.get('examples_seen')} |
-| final train / eval loss | {_fmt_loss(res.get('final_train_loss'))} / {_fmt_loss(res.get('final_eval_loss'))} |
+| rank / alpha | {hp.get("rank")} / {hp.get("alpha")} |
+| lora_dropout | {hp.get("lora_dropout")} |
+| learning rate | {hp.get("learning_rate")} ({hp.get("lr_scheduler", "constant")}) |
+| seq length | {hp.get("max_seq")} |
+| epochs / examples | {data.get("epochs")} / {data.get("examples_seen")} |
+| final train / eval loss | {_fmt_loss(res.get("final_train_loss"))} / {_fmt_loss(res.get("final_eval_loss"))} |
 
 Data: synthetic RAIF examples (with mechanism-carrier shapes) augmented with
 real tool-call argument objects from `glaiveai/glaive-function-calling-v2`
@@ -184,21 +200,31 @@ Trained in part on `glaiveai/glaive-function-calling-v2` (Apache-2.0) — attrib
 
 def main() -> int:
     """Parse arguments, write the model card, and upload the adapter to the HF Hub."""
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--adapter", type=Path, required=True, help="adapter dir to upload")
-    p.add_argument("--repo", required=True, help="target HF repo id, e.g. user/raif-llama-3.2-3b-lora")
+    p.add_argument(
+        "--repo",
+        required=True,
+        help="target HF repo id, e.g. user/raif-llama-3.2-3b-lora",
+    )
     p.add_argument("--base-model", default="unsloth/Llama-3.2-3B-Instruct")
     p.add_argument("--private", action="store_true", help="create the repo private")
-    p.add_argument("--no-card", action="store_true", help="don't write/overwrite README.md")
+    p.add_argument(
+        "--no-card", action="store_true", help="don't write/overwrite README.md"
+    )
     args = p.parse_args()
 
     if not (args.adapter / "adapter_config.json").exists():
-        raise SystemExit(f"✗ {args.adapter} doesn't look like a PEFT adapter dir "
-                         f"(no adapter_config.json)")
+        raise SystemExit(
+            f"✗ {args.adapter} doesn't look like a PEFT adapter dir "
+            f"(no adapter_config.json)"
+        )
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
 
     from huggingface_hub import HfApi
+
     api = HfApi(token=token)
 
     if not args.no_card:
@@ -208,7 +234,9 @@ def main() -> int:
 
     api.create_repo(args.repo, private=args.private, exist_ok=True, repo_type="model")
     print(f"uploading {args.adapter} → https://huggingface.co/{args.repo} ...")
-    api.upload_folder(folder_path=str(args.adapter), repo_id=args.repo, repo_type="model")
+    api.upload_folder(
+        folder_path=str(args.adapter), repo_id=args.repo, repo_type="model"
+    )
     print(f"✓ done: https://huggingface.co/{args.repo}")
     return 0
 

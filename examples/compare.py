@@ -90,8 +90,10 @@ def load_two(model: str):
     spec too, for the think-strip flag."""
     s = M.spec(model)
     if not (s["mlx_dir"] / "adapters.safetensors").exists():
-        sys.exit(f"Adapter for {model!r} not built. "
-                 f"Run: uv run python examples/setup_adapter.py --model {model}")
+        sys.exit(
+            f"Adapter for {model!r} not built. "
+            f"Run: uv run python examples/setup_adapter.py --model {model}"
+        )
     from mlx_lm import load
     from mlx_lm.utils import load_adapters
 
@@ -104,13 +106,21 @@ def load_two(model: str):
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", default=M.DEFAULT_MODEL, choices=list(M.MODELS),
-                    help="which RAIF model to compare against its own base")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--model",
+        default=M.DEFAULT_MODEL,
+        choices=list(M.MODELS),
+        help="which RAIF model to compare against its own base",
+    )
     ap.add_argument("--n", type=int, default=12)
-    ap.add_argument("--data", default="valid",
-                    help="'valid', 'holdout', or a path to a .jsonl eval file")
+    ap.add_argument(
+        "--data",
+        default="valid",
+        help="'valid', 'holdout', or a path to a .jsonl eval file",
+    )
     args = ap.parse_args()
 
     from mlx_lm import generate
@@ -124,13 +134,18 @@ def main() -> int:
     def gen(model, user: str) -> str:
         prompt = tok.apply_chat_template(
             [{"role": "user", "content": user}],
-            add_generation_prompt=True, tokenize=False)
-        out = generate(model, tok, prompt=prompt, max_tokens=1024,
-                       sampler=greedy, verbose=False)
+            add_generation_prompt=True,
+            tokenize=False,
+        )
+        out = generate(
+            model, tok, prompt=prompt, max_tokens=1024, sampler=greedy, verbose=False
+        )
         return M.strip_think(s, out).strip()
 
-    data_map = {"valid": REPO / "data" / "valid.jsonl",
-                "holdout": REPO / "data" / "eval_holdout.jsonl"}
+    data_map = {
+        "valid": REPO / "data" / "valid.jsonl",
+        "holdout": REPO / "data" / "eval_holdout.jsonl",
+    }
     path = data_map.get(args.data, Path(args.data))
     if not path.exists():
         sys.exit(f"No eval data at {path}")
@@ -141,8 +156,10 @@ def main() -> int:
     if not examples:
         sys.exit(f"No 'translate' examples to compare in {path}")
 
-    agg = {"base": {"parse": 0, "fid": 0, "tok": 0},
-           "raif": {"parse": 0, "fid": 0, "tok": 0}}
+    agg = {
+        "base": {"parse": 0, "fid": 0, "tok": 0},
+        "raif": {"parse": 0, "fid": 0, "tok": 0},
+    }
     n = 0
     for ex in examples:
         source = decode(ex["messages"][1]["content"])  # gold RAIF -> the value
@@ -168,35 +185,47 @@ def main() -> int:
         agg["raif"]["fid"] += r_fid
         agg["raif"]["tok"] += n_tokens(tok, r_out)
 
-        print(f"\n{'='*64}\n{ex['meta']['shape']}  (source {len(src_json)} B JSON)")
-        print(f"  base : parse {'✓' if b_ok else '✗'}  fidelity "
-              f"{'✓' if b_fid else '✗'}  {n_tokens(tok, b_out):>4} tok")
-        print(f"  raif : parse {'✓' if r_ok else '✗'}  fidelity "
-              f"{'✓' if r_fid else '✗'}  {n_tokens(tok, r_out):>4} tok")
+        print(f"\n{'=' * 64}\n{ex['meta']['shape']}  (source {len(src_json)} B JSON)")
+        print(
+            f"  base : parse {'✓' if b_ok else '✗'}  fidelity "
+            f"{'✓' if b_fid else '✗'}  {n_tokens(tok, b_out):>4} tok"
+        )
+        print(
+            f"  raif : parse {'✓' if r_ok else '✗'}  fidelity "
+            f"{'✓' if r_fid else '✗'}  {n_tokens(tok, r_out):>4} tok"
+        )
         if not b_fid:
             print(f"    base raw: {b_out[:120]!r}")
 
-    print(f"\n{'='*64}\nSUMMARY over {n} structured-output tasks")
+    print(f"\n{'=' * 64}\nSUMMARY over {n} structured-output tasks")
     if n == 0:
         sys.exit("No decodable gold RAIF examples; nothing to compare.")
     print("  (base is *coached*: 'compact JSON, nothing else' — its best case)")
     for label in ("base", "raif"):
         a = agg[label]
-        print(f"  {label:5s}: parse {a['parse']}/{n}  fidelity {a['fid']}/{n}  "
-              f"avg {a['tok']/n:.0f} output tokens")
+        print(
+            f"  {label:5s}: parse {a['parse']}/{n}  fidelity {a['fid']}/{n}  "
+            f"avg {a['tok'] / n:.0f} output tokens"
+        )
     if agg["base"]["tok"]:
         ratio = agg["raif"]["tok"] / agg["base"]["tok"]
-        print(f"\n  RAIF uses {ratio:.2f}× the output tokens of coached base JSON "
-              f"({100*(1-ratio):+.0f}%).")
+        print(
+            f"\n  RAIF uses {ratio:.2f}× the output tokens of coached base JSON "
+            f"({100 * (1 - ratio):+.0f}%)."
+        )
 
     # The qualitative half: how base Llama behaves *uncoached* — the thing you'd
     # actually have to parse if you hadn't fine-tuned. Same model, plain ask.
-    print(f"\n{'='*64}\nHOW BASE LLAMA BEHAVES UNCOACHED (same prompt the LoRA was trained on)")
+    print(
+        f"\n{'=' * 64}\nHOW BASE LLAMA BEHAVES UNCOACHED (same prompt the LoRA was trained on)"
+    )
     demo = '{"user":"ada","tasks":["write","test","ship"],"done":false,"count":3}'
     nat = gen(base, RAIF_TMPL.format(json=demo))
     print(f"  prompt: Rewrite this JSON payload as RAIF: {demo}")
-    print(f"  base output ({n_tokens(tok, nat)} tok):\n    "
-          + nat[:400].replace("\n", "\n    "))
+    print(
+        f"  base output ({n_tokens(tok, nat)} tok):\n    "
+        + nat[:400].replace("\n", "\n    ")
+    )
     print("  → it doesn't know RAIF; it hallucinates/echoes and wraps in prose.")
     return 0
 
