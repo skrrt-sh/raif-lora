@@ -27,4 +27,6 @@ Show
 Type "uv run python examples/demo.py 2>/dev/null"
 Sleep 700ms
 Enter
-Sleep 60s
+# Ends during the demo's ~8s outro hold — on the call-to-action, not the
+# blinking shell prompt. Bump if a slower machine cuts the last slide.
+Sleep 52s
