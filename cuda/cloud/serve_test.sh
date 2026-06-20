@@ -70,14 +70,21 @@ CHAT_TEMPLATE="$WORKROOT/raif-lora/cuda/cloud/raif_llama32.jinja"
 [ -f "$PLUGIN" ]        || die "plugin not found at $PLUGIN"
 [ -f "$CHAT_TEMPLATE" ] || die "chat template not found at $CHAT_TEMPLATE"
 
-# Pinned env (see header). vLLM is a no-op on a vllm/vllm-openai pod; on a
-# PyTorch template the pins pull the CUDA-12.8 torch that works on driver 12.9.
+# Pinned env (see header). The heavy vLLM/torch install is skipped if vLLM is
+# already present (e.g. a vllm/vllm-openai pod); on a PyTorch template the pin
+# pulls the CUDA-12.8 torch that works on driver 12.9. The lightweight pins below
+# ALWAYS run (idempotent) because the stock RunPod image ships bleeding-edge libs
+# that outpace vLLM 0.11's loose deps:
+#   transformers>=4.56,<5  — 5.x dropped all_special_tokens_extended (tokenizer init)
+#   fastapi==0.115.6       — pins starlette <1.0; vLLM 0.11's prometheus
+#                            instrumentator breaks on starlette 1.x
+#                            ("'_IncludedRouter' object has no attribute 'path'")
 # raif-format is installed EDITABLE from the sibling clone (the new
 # stream/schema_bridge aren't on PyPI yet).
-log "2. Install pinned vllm + transformers + raif-format (editable)"
-"$PY" -c 'import vllm' 2>/dev/null \
-  || "$PY" -m pip install -q "vllm==0.11.0" "transformers>=4.56,<5"
-"$PY" -m pip install -q openai pytest requests -e "$WORKROOT/raif-standard/packages/py"
+log "2. Install pinned vllm + transformers + fastapi + raif-format (editable)"
+"$PY" -c 'import vllm' 2>/dev/null || "$PY" -m pip install -q "vllm==0.11.0"
+"$PY" -m pip install -q "transformers>=4.56,<5" "fastapi==0.115.6" \
+  openai pytest requests -e "$WORKROOT/raif-standard/packages/py"
 
 log "3. Serve $BASE + LoRA '$ADAPTER' with the raif tool parser (port $PORT)"
 # --chat-template renders ONLY the messages (ignores tools) -> training parity.

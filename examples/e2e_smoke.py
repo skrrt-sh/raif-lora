@@ -133,13 +133,20 @@ def check_prompt_parity(base_url: str, model: str, api_key: str) -> None:
             "[parity]     PASS  rendered prompt is free of OpenAI tool-definition markers"
         )
 
-    assert "<schema>" in prompt, (
-        "rendered prompt is missing the '<schema>' cue — the plugin's adjust_request "
-        f"did not inject it (or the template dropped it):\n{prompt}"
-    )
-    print(
-        "[parity]     PASS  rendered prompt carries the '<schema>' cue (training parity)"
-    )
+    # NOTE: /tokenize renders only the chat template; it does NOT run the tool
+    # parser's adjust_request, which is where the <schema> cue is injected (that
+    # happens on the live chat-completion path). So the cue is expected to be
+    # absent here — its presence is a bonus, its absence is not a failure. The
+    # load-bearing invariant /tokenize *can* verify is the one above: the custom
+    # --chat-template stripped the OpenAI tool-definition JSON.
+    if "<schema>" in prompt:
+        print("[parity]     PASS  rendered prompt already carries the '<schema>' cue")
+    else:
+        print(
+            "[parity]     note  no '<schema>' in the /tokenize render — expected, "
+            "since /tokenize skips the parser's adjust_request; the cue is injected "
+            "on the live chat-completion path (verified by the tool-call check below)."
+        )
 
 
 def check_non_streaming(client: OpenAI, model: str) -> None:
