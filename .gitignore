@@ -3,6 +3,8 @@
 __pycache__/
 *.pyc
 .uv-cache/
+.ruff_cache/
+.pytest_cache/
 
 # Model weights / adapters (large binaries — regenerate or download)
 models/
