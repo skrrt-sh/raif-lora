@@ -184,7 +184,24 @@ is a single vLLM plugin that makes a stock OpenAI endpoint speak RAIF
 transparently: existing clients get RAIF on `tools` and `response_format` with
 **no proxy and no client changes** — the model emits compact RAIF-G, the plugin
 decodes it to JSON at the boundary, and the `decode()` step above moves
-server-side. Verified e2e on vLLM 0.19 (A40). It lives in its own repo:
+server-side.
+
+**All three adapters above serve through it** — `raif-llama-3.2-3b-lora`,
+`raif-qwen3-4b-lora`, and `raif-qwen2.5-0.5b-lora`, each verified end-to-end on
+vLLM 0.19 (A40) across every non-streaming OpenAI path. The plugin ships a
+tools-ignoring chat template per base family inside the wheel, so `pip install
+raif-vllm` is all you need:
+
+```sh
+pip install raif-vllm
+VLLM_PLUGINS=raif vllm serve Qwen/Qwen3-4B-Instruct-2507 \
+  --enable-lora --lora-modules raif=skrrt-sh/raif-qwen3-4b-lora \
+  --chat-template "$(raif-vllm-chat-template qwen-4b)" \
+  --reasoning-parser raif --enable-auto-tool-choice --tool-call-parser raif
+```
+
+Swap in `llama-3b` / `qwen-0.5b` (and the matching base + adapter) for the other
+two. It lives in its own repo:
 [**skrrt-sh/raif-vllm**](https://github.com/skrrt-sh/raif-vllm).
 
 ## Training stacks
