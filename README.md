@@ -4,7 +4,7 @@
 
 <h1 align="center">raif-lora</h1>
 
-<p align="center"><strong>A LoRA fine-tune that teaches Llama-3.2-3B to emit RAIF instead of JSON</strong></p>
+<p align="center"><strong>LoRA fine-tunes that teach small models (Llama-3.2-3B · Qwen3-4B · Qwen2.5-0.5B) to emit RAIF instead of JSON</strong></p>
 
 <p align="center">
   Brings <a href="https://github.com/skrrt-sh/raif-standard">RAIF</a>'s token savings and<br>
@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
-  <img src="https://img.shields.io/badge/base-Llama--3.2--3B-blue" alt="Base: Llama-3.2-3B">
+  <img src="https://img.shields.io/badge/bases-Llama--3.2%20%C2%B7%20Qwen3%20%C2%B7%20Qwen2.5-blue" alt="Bases: Llama-3.2 · Qwen3 · Qwen2.5">
   <img src="https://img.shields.io/badge/acceptance%20gate-PASS-brightgreen" alt="Acceptance gate: PASS">
   <a href="https://huggingface.co/skrrt-sh/raif-llama-3.2-3b-lora"><img src="https://img.shields.io/badge/model-Hugging%20Face-ffb000" alt="Model on Hugging Face"></a>
 </p>
@@ -21,13 +21,17 @@
 ---
 
 RAIF is fluent on large (~20B+) models but marginal below 8B — small models haven't
-seen the format and fall back to malformed JSON. This adapter closes that gap: it
-teaches **Llama-3.2-3B** to emit RAIF natively, so the format's token savings and
+seen the format and fall back to malformed JSON. This repo closes that gap: it
+teaches small models to emit RAIF natively, so the format's token savings and
 self-repair reach the model tier people actually run locally.
 
-The trained artifact is a LoRA adapter (~195 MB), published on Hugging Face:
+The flagship is a **Llama-3.2-3B** LoRA (~195 MB); the same recipe ports to two
+more bases. **All three adapters are published on Hugging Face** — each detailed
+below, and all three serve through [`raif-vllm`](https://github.com/skrrt-sh/raif-vllm):
 
-> **[skrrt-sh/raif-llama-3.2-3b-lora](https://huggingface.co/skrrt-sh/raif-llama-3.2-3b-lora)**
+- [**skrrt-sh/raif-llama-3.2-3b-lora**](https://huggingface.co/skrrt-sh/raif-llama-3.2-3b-lora) — Llama-3.2-3B · the flagship, clears the v0.5 gate (100% / 95%)
+- [**skrrt-sh/raif-qwen3-4b-lora**](https://huggingface.co/skrrt-sh/raif-qwen3-4b-lora) — Qwen3-4B-Instruct · deployable agent model (~14 GB), holdout 98% / 95%
+- [**skrrt-sh/raif-qwen2.5-0.5b-lora**](https://huggingface.co/skrrt-sh/raif-qwen2.5-0.5b-lora) — Qwen2.5-0.5B · tiny & fast (97% parse)
 
 ## Results
 
