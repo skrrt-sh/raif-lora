@@ -4,10 +4,8 @@ name: vLLM plugin CI
 # 3 vLLM-shim tests `importorskip` and skip cleanly on the runner (no vLLM/CUDA),
 # while the pure decode/inject/route/structured logic runs in full.
 #
-# The plugin imports `raif.schema_bridge`, which landed on raif-standard `main`
-# (PR #13) but is not yet released to PyPI. CI therefore checks out the companion
-# repo at `main` and installs `raif-format` editable from it. Once raif-format>=0.6
-# ships to PyPI, drop the second checkout and depend on the published package.
+# raif-format (>=0.6, with schema_bridge/stream) is on PyPI and installs as a
+# normal dependency of the plugin.
 
 on:
   push:
@@ -52,27 +50,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Checkout raif-standard (raif-format with schema_bridge)
-        # pin to SHA — TODO: remove once raif-format>=0.6 is on PyPI.
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: skrrt-sh/raif-standard
-          ref: main
-          path: raif-standard
-          persist-credentials: false
-
       - name: Setup Python ${{ matrix.python-version }}
         # pin to SHA
         uses: actions/setup-python@e9d6f990972a57673cdb72ec29e19d42ba28880f # v6.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install raif-format (editable, from companion repo) + plugin dev deps
+      - name: Install the plugin (pulls raif-format>=0.6 from PyPI) + dev deps
         working-directory: packages/vllm
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e "${{ github.workspace }}/raif-standard/packages/py"
-          python -m pip install ruff pytest
+          python -m pip install . ruff pytest
 
       - name: Lint (ruff)
         working-directory: packages/vllm

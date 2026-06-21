@@ -24,7 +24,7 @@ classifiers = [
 # vLLM itself is provided by the serving host (and pins CUDA/torch), so it is NOT
 # a hard dependency — only the pure RAIF format lib is. Use the `vllm` extra to
 # pull a compatible engine for local experiments.
-dependencies = ["raif-format>=0.5"]
+dependencies = ["raif-format>=0.6"]
 
 [project.optional-dependencies]
 # v0.19.x is the last CUDA-12 vLLM and carries every hook this plugin needs
