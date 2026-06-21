@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.jpg" alt="RAIF" width="640">
+  <img src="https://raw.githubusercontent.com/skrrt-sh/raif-lora/main/assets/banner.jpg" alt="RAIF" width="640">
 </p>
 
 <h1 align="center">raif-lora</h1>
@@ -99,7 +99,7 @@ model and its chat-template markers change.
 > **[skrrt-sh/raif-qwen2.5-0.5b-lora](https://huggingface.co/skrrt-sh/raif-qwen2.5-0.5b-lora)** · Apache-2.0 base
 
 <p align="center">
-  <img src="assets/demo-0.5b.gif" alt="Live demo: the same schema-fill prompt to the bare Qwen2.5-0.5B (rambles and reshapes) and to the RAIF LoRA (fills the schema byte-exact)" width="760">
+  <img src="https://raw.githubusercontent.com/skrrt-sh/raif-lora/main/assets/demo-0.5b.gif" alt="Live demo: the same schema-fill prompt to the bare Qwen2.5-0.5B (rambles and reshapes) and to the RAIF LoRA (fills the schema byte-exact)" width="760">
 </p>
 
 <p align="center"><sub>Same prompt to both — bare 0.5B vs the RAIF LoRA. Every answer is generated live and greedy at record time; verdicts come from real <code>raif.decode()</code>. Rebuild with <code>vhs assets/demo-0.5b.tape</code>.</sub></p>
