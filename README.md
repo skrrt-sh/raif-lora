@@ -179,13 +179,13 @@ layout than the torch/PEFT weights above. See [`examples/README.md`](./examples/
 
 ### Serve on vLLM (GPU) — transparently
 
-For server deployments, [**`packages/vllm`**](./packages/vllm) (`raif-vllm`) is a
-single vLLM plugin that makes a stock OpenAI endpoint speak RAIF transparently:
-existing clients get RAIF on `tools` and `response_format` with **no proxy and no
-client changes** — the model emits compact RAIF-G, the plugin decodes it to JSON at
-the boundary, and the `decode()` step above moves server-side. Verified e2e on
-vLLM 0.19 (A40). See [`packages/vllm/README.md`](./packages/vllm/README.md) and
-[`docs/vllm_tool_calling.md`](./docs/vllm_tool_calling.md).
+For server deployments, [**`raif-vllm`**](https://github.com/skrrt-sh/raif-vllm)
+is a single vLLM plugin that makes a stock OpenAI endpoint speak RAIF
+transparently: existing clients get RAIF on `tools` and `response_format` with
+**no proxy and no client changes** — the model emits compact RAIF-G, the plugin
+decodes it to JSON at the boundary, and the `decode()` step above moves
+server-side. Verified e2e on vLLM 0.19 (A40). It lives in its own repo:
+[**skrrt-sh/raif-vllm**](https://github.com/skrrt-sh/raif-vllm).
 
 ## Training stacks
 
@@ -234,7 +234,6 @@ regression.** Base locked to Llama-3.2-3B for the first ship.
 ```
 RECIPE.md                the gate-clearing run: config, ladder, reproduction
 ITERATION_PLAN.md        staged ramp (smoke → warm → full) + go/no-go gates
-packages/vllm/           raif-vllm — the transparent vLLM serving plugin
 examples/                runnable local demos (chat, server, AI SDK, base-vs-RAIF)
 cuda/                    unsloth/NVIDIA stack (+ push_to_hub.py)
 configs/ · src/          MLX stack and shared tooling
