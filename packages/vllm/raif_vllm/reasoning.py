@@ -120,10 +120,30 @@ if _ReasoningParser is not None:
     class RaifReasoningParser(_ReasoningParser):
         """Decode RAIF-G into `message.content` for the `response_format` path.
 
-        Non-streaming uses the full request (so it can read `response_format`);
-        streaming has no request, so it decodes coarsely — buffering until a
-        RAIF-G terminator appears, which plain chat never emits, then decoding
-        schemaless. Pass-through otherwise.
+        NON-STREAMING is the proven path: `extract_reasoning` gets the full
+        `request`, reads the RAIF declaration, and decodes RAIF-G → JSON.
+
+        STREAMING `response_format` is a KNOWN LIMITATION — it is NOT decoded;
+        the client receives raw RAIF-G. Use non-streaming for structured output.
+        Two compounding reasons, both verified on vLLM 0.19 against the LoRA:
+
+          1. `is_reasoning_end()` must return True so the *tools* streaming path
+             engages the tool parser (vLLM only runs `extract_tool_calls_streaming`
+             after reasoning ends). But that same True makes vLLM's
+             `prompt_is_reasoning_end` gate route every generated token straight to
+             content as raw text — `extract_reasoning_streaming` is never even
+             called for the `response_format` path. A single shared parser cannot
+             return both True (tools) and False (response_format): the streaming
+             seam passes no `request`, and tools/response_format generations are
+             token-identical RAIF-G, so they cannot be told apart.
+          2. Even if it were called, the streaming seam passes no schema and the
+             LoRA emits no RAIF-G terminator, so there is no signal to decode
+             against incrementally.
+
+        A real fix needs the model to emit a framing terminator (retrain) or a
+        vLLM-side per-request streaming hook — both out of scope here. The method
+        below keeps a terminator fast-path so it *would* decode for a
+        terminator-emitting model, and otherwise passes through unchanged.
         """
 
         def __init__(self, tokenizer: Any, *args: Any, **kwargs: Any) -> None:
@@ -144,9 +164,10 @@ if _ReasoningParser is not None:
             current_token_ids: Any,
             delta_token_ids: Any,
         ) -> Any:
-            # Coarse tier: a structured generation is decoded only once its RAIF-G
-            # block terminates; until then (and for plain chat, which never emits
-            # a terminator) stream the delta through unchanged.
+            # In practice this is never reached for `response_format` (see the
+            # class docstring: the is_reasoning_end=True gate bypasses it). The
+            # terminator fast-path is kept for a future terminator-emitting model;
+            # for the current LoRA there is no terminator, so we pass through.
             if not has_terminator(current_text):
                 return _DeltaMessage(content=delta_text)
             decoded = decode_content(current_text)
@@ -160,6 +181,13 @@ if _ReasoningParser is not None:
 
         # Required abstract methods — RAIF-G has no separate reasoning channel,
         # so there is no reasoning/answer split: everything is content.
+        #
+        # Returning True is load-bearing for the TOOLS streaming path: vLLM runs
+        # `extract_tool_calls_streaming` only once reasoning has ended, so the tool
+        # parser would never fire otherwise. The cost is that `response_format`
+        # streaming is bypassed (see the class docstring) — an accepted trade-off
+        # since the more common streaming case (tools) must keep working and
+        # `response_format` has a fully-working non-streaming path.
         def is_reasoning_end(self, input_ids: list[int]) -> bool:
             return True
 
