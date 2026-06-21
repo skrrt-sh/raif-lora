@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from raif_vllm import (
+from raif_vllm.tool_parser import (
     CoarseToolCallStreamer,
     build_schema_block,
     decode_arguments,
@@ -123,9 +123,9 @@ def test_inject_schema_leaves_non_string_content_alone():
 def _new_parser():
     """A RaifToolParser bypassing the vLLM base __init__ (which needs a real
     tokenizer); the parser methods under test use only module helpers + state."""
-    import raif_vllm
+    from raif_vllm import tool_parser
 
-    parser = raif_vllm.RaifToolParser.__new__(raif_vllm.RaifToolParser)
+    parser = tool_parser.RaifToolParser.__new__(tool_parser.RaifToolParser)
     parser._streamer = None
     return parser
 

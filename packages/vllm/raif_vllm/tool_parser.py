@@ -224,12 +224,14 @@ if _ToolParser is not None:
             self._streamer: CoarseToolCallStreamer | None = None
 
         def adjust_request(self, request: Any) -> Any:
+            # Keep RAIF-G framing terminators (`</raif>`, `<|raif_end|>`) in the
+            # output so the parser can see them. Deliberately do NOT call
+            # super().adjust_request (it sets `structured_outputs` to the tools'
+            # JSON schema, forcing JSON output — the C16 trap) and do NOT inject
+            # the `<schema>` cue here: `adjust_request` fires AFTER chat
+            # templating, so prompt injection is a no-op. The cue is injected
+            # pre-template by the `render_chat` hook (see `plugin.register`).
             request.skip_special_tokens = False
-            tool = resolve_tool(_request_tools(request), _request_tool_choice(request))
-            if tool is not None:
-                block = build_schema_block(tool)
-                if block:
-                    request.messages = inject_schema(request.messages, block)
             return request
 
         def extract_tool_calls(self, model_output: str, request: Any) -> Any:
