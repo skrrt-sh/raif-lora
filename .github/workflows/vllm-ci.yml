@@ -4,11 +4,10 @@ name: vLLM plugin CI
 # 3 vLLM-shim tests `importorskip` and skip cleanly on the runner (no vLLM/CUDA),
 # while the pure decode/inject/route/structured logic runs in full.
 #
-# The plugin imports `raif.schema_bridge`, which currently lives on the
-# raif-standard branch `feat/stream-and-schema-bridge` (PR #13) and is not yet on
-# PyPI. CI therefore checks out the companion repo and installs `raif-format`
-# editable from it. Once PR #13 releases raif-format>=0.6, drop the second
-# checkout and replace the editable install with the published dependency.
+# The plugin imports `raif.schema_bridge`, which landed on raif-standard `main`
+# (PR #13) but is not yet released to PyPI. CI therefore checks out the companion
+# repo at `main` and installs `raif-format` editable from it. Once raif-format>=0.6
+# ships to PyPI, drop the second checkout and depend on the published package.
 
 on:
   push:
@@ -54,11 +53,11 @@ jobs:
           persist-credentials: false
 
       - name: Checkout raif-standard (raif-format with schema_bridge)
-        # pin to SHA — TODO: remove once raif-format>=0.6 (PR #13) is on PyPI.
+        # pin to SHA — TODO: remove once raif-format>=0.6 is on PyPI.
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: skrrt-sh/raif-standard
-          ref: feat/stream-and-schema-bridge
+          ref: main
           path: raif-standard
           persist-credentials: false
 
