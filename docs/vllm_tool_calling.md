@@ -7,10 +7,11 @@ chat-template pitfall that silently breaks it, and the one-line fix.
 
 The model (`unsloth/Llama-3.2-3B-Instruct` + LoRA
 `skrrt-sh/raif-llama-3.2-3b-lora`, rank 32) does not emit OpenAI tool-call JSON.
-It emits **RAIF-G** — RAIF's compact serialization. The
-`RaifToolParser` plugin (`raif-lora/src/raif_vllm.py`, registered under the name
-`raif`) converts that to OpenAI `tool_calls` at the request and response
-boundaries. End to end:
+It emits **RAIF-G** — RAIF's compact serialization. The `RaifToolParser`
+(the tool-call path of the installable `raif-vllm` plugin —
+`packages/vllm/raif_vllm/tool_parser.py`, registered under the name `raif`)
+converts that to OpenAI `tool_calls` at the request and response boundaries.
+End to end:
 
 1. **`adjust_request`** runs before generation. It resolves the single tool the
    output will be parsed against (named `tool_choice`, or a lone tool under
@@ -26,7 +27,10 @@ boundaries. End to end:
    call rather than malformed arguments.
 
 The decode/encode logic is pure (no vLLM import) and unit-tested; the shim only
-wires vLLM types to it. Plugin shim tests: 17/17 against real vLLM 0.11 types.
+wires vLLM types to it. Package tests: 57 passed, 3 skipped (the 3 skips are
+`importorskip` shims that run only where vLLM is installed). The tool path was
+first proven against real vLLM 0.11 types; the live e2e (`serve_smoke_v019.sh`)
+now runs on vLLM 0.19.
 
 ## The prompt contract
 
@@ -147,32 +151,47 @@ End to end, the decoded arguments for the `get_weather` example should be
 
 ## Serving command
 
+The tool path now ships inside the single installable `raif-vllm` plugin, loaded
+through vLLM's `general_plugins` entry point — no `--tool-parser-plugin FILE`.
+Install the plugin (and the `raif-format` lib it depends on), then activate it
+with `VLLM_PLUGINS=raif`:
+
 ```sh
-python3.12 -m vllm.entrypoints.openai.api_server \
+# editable from the two sibling working trees (or, once released: pip install raif-format raif-vllm)
+python3.12 -m pip install -e raif-standard/packages/py -e raif-lora/packages/vllm
+
+VLLM_PLUGINS=raif python3.12 -m vllm.entrypoints.openai.api_server \
   --model unsloth/Llama-3.2-3B-Instruct \
-  --enable-lora \
-  --lora-modules raif=skrrt-sh/raif-llama-3.2-3b-lora \
-  --enable-auto-tool-choice \
-  --tool-parser-plugin /path/to/raif-lora/src/raif_vllm.py \
-  --tool-call-parser raif \
-  --chat-template /path/to/raif-lora/cuda/cloud/raif_llama32.jinja
+  --enable-lora --lora-modules raif=skrrt-sh/raif-llama-3.2-3b-lora \
+  --max-lora-rank 32 --max-model-len 8192 --enforce-eager \
+  --chat-template /path/to/raif-lora/cuda/cloud/raif_llama32.jinja \
+  --reasoning-parser raif \
+  --enable-auto-tool-choice --tool-call-parser raif
 ```
 
-The `--chat-template raif_llama32.jinja` is the load-bearing flag — it is what
-makes the served prompt match training. `--tool-parser-plugin` registers the
-`raif` parser; `--tool-call-parser raif` selects it.
+`VLLM_PLUGINS=raif` runs the entry point, which registers the `raif` reasoning +
+tool parsers **and** installs the `render_chat` inject hook. `--tool-call-parser
+raif` selects the tool path; `--reasoning-parser raif` lights up the
+`response_format` decode path. The `--chat-template raif_llama32.jinja` is still
+the load-bearing flag for tool parity — it is what makes the served prompt match
+training (renders messages only, ignores the `tools` variable). The end-to-end
+driver is `cuda/cloud/serve_smoke_v019.sh`.
 
 ### Version pins (RunPod A40, driver CUDA 12.9)
 
 | Pin | Why |
 |---|---|
-| `vllm==0.11.0` | ships torch 2.8.0+cu128, runs on driver 12.9; vLLM 0.23.0's torch needs a CUDA-13 driver and crashes with "NVIDIA driver too old, found version 12090". |
-| `transformers>=4.56,<5` | transformers 5.x removed `all_special_tokens_extended`, which vLLM 0.11 tokenizer init calls. |
+| `vllm>=0.19,<0.20` | v0.19.0 is the **last CUDA-12 vLLM** and carries every hook the plugin needs (reasoning-parser content decode + the `render_chat` inject seam). Newer vLLM ships cu130 torch and crashes on a CUDA-12 driver with "NVIDIA driver too old, found version 12090". |
+| `fastapi==0.115.6` | pins starlette `<1.0`; vLLM's prometheus instrumentator breaks on starlette 1.x (`'_IncludedRouter' object has no attribute 'path'`), so the server never becomes healthy. |
 | `python3.12` | the stock RunPod image's real interpreter with torch/vllm; plain `python3` is an empty 3.10. |
 
 ## Follow-ups
 
-- Confirm the `</raif>` streaming terminator fires on a fixed run (coarse-tier
-  streaming emits the arguments object only once a terminator is seen).
+- **Streaming terminator — resolved (negative).** Confirmed on vLLM 0.19: the LoRA
+  emits **no** RAIF-G terminator (`</raif>` / `<|raif_end|>`). Streaming tool calls
+  still work (the tool parser decodes RAIF-G incrementally), but streaming
+  `response_format` is **not** decoded — see `vllm_e2e_results.md` for the root
+  cause (the `is_reasoning_end` gate) and the known-limitation note. Use
+  non-streaming `response_format`.
 - The MLX serving path (`raif-lora/examples/serve.sh`) is separate from this vLLM
   path and out of scope here.

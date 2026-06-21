@@ -1,10 +1,50 @@
-# vLLM End-to-End Results: RAIF-G Tool-Call Parser
+# vLLM End-to-End Results: RAIF single plugin
 
-Status: **Plugin shim tests PASS (17/17). Live smoke FAILED (prompt-format mismatch). Fix applied via custom `--chat-template`.**
+Status: **Single `raif-vllm` plugin verified on vLLM 0.19 (A40). 4/5 OpenAI paths
+PASS; streaming `response_format` is a documented known limitation.**
 
-This document is the test-results artifact for the GPU end-to-end (e2e) run of the
-`raif-lora` vLLM `ToolParser` plugin against a live model on RunPod. It records the
-working stack, the observed failure, the root-cause analysis, and the fix.
+This document is the GPU end-to-end (e2e) test-results artifact for the RAIF vLLM
+integration on RunPod. It has two parts: the **current** single-plugin run on
+vLLM 0.19 (the `general_plugins` entry-point model — tools, `response_format`,
+`json_object`, plain chat), and the **original** tool-call finding on vLLM 0.11
+(the chat-template prompt-parity fix, still in force).
+
+## Current: single-plugin e2e (vLLM 0.19, A40)
+
+Served `unsloth/Llama-3.2-3B-Instruct` + LoRA `skrrt-sh/raif-llama-3.2-3b-lora`
+with `VLLM_PLUGINS=raif --reasoning-parser raif --enable-auto-tool-choice
+--tool-call-parser raif` and the tools-ignoring `--chat-template`
+(`cuda/cloud/serve_smoke_v019.sh`), then drove all five paths through a plain
+OpenAI client (`examples/smoke_plugin.py`):
+
+| Path | Result | Notes |
+|---|---|---|
+| plain chat | ✅ PASS | untouched passthrough |
+| tools | ✅ PASS | `get_weather` → JSON `tool_calls`, RAIF-G wire = 13 tok |
+| `response_format` (`json_schema`) | ✅ PASS | decoded to JSON content; **13 vs 16 tok JSON → −19%** |
+| `response_format` (`json_object`) | ✅ PASS | schemaless decode to valid JSON |
+| `response_format` **streaming** | ⚠️ KNOWN LIMITATION | client receives raw RAIF-G, **undecoded** |
+
+### Streaming `response_format` — known limitation (root cause)
+
+Verified on vLLM 0.19 by instrumenting the parser: streaming structured output is
+**not decoded**. The reasoning parser's `is_reasoning_end()` must return `True` so
+the *tools* streaming path engages the tool parser (vLLM only runs
+`extract_tool_calls_streaming` after reasoning ends). That same `True` trips
+vLLM's `prompt_is_reasoning_end` gate, which routes every generated token straight
+to content as raw text — `extract_reasoning_streaming` is never even called for
+the `response_format` path. A single shared parser cannot return both `True`
+(tools) and `False` (response_format): the streaming seam passes no `request`, and
+tools/response_format generations are token-identical RAIF-G. The LoRA also emits
+no RAIF-G terminator, so there is no incremental signal to decode against. A real
+fix needs a framing terminator (retrain) or a vLLM-side per-request streaming hook.
+**Use non-streaming `response_format` for structured output — it works fully.**
+
+## Original: tool-call finding (vLLM 0.11)
+
+The sections below record the first GPU run (vLLM 0.11, file-based tool parser)
+that surfaced the chat-template prompt-parity issue. The `--chat-template` fix it
+produced is still load-bearing in the current flow.
 
 ## What was run
 
@@ -150,25 +190,22 @@ See `docs/vllm_tool_calling.md` for the full template and serving wiring.
 
 ## Reproduce
 
-Pin the working stack:
+Current flow (vLLM 0.19, entry-point plugin) — `cuda/cloud/serve_smoke_v019.sh`
+encodes all of this; see `docs/runpod_testing.md` for the RunPod runbook. In
+short: rsync both working trees as siblings under `$WORKROOT`, then on the box:
 
 ```bash
-python3.12 -m pip install "vllm==0.11.0" "transformers>=4.56,<5"
+WORKROOT=/workspace/raif bash raif-lora/cuda/cloud/serve_smoke_v019.sh
 ```
 
-Serve base + LoRA with the `raif` parser and the custom (tools-ignoring) template:
+It installs `vllm==0.19.0` + `fastapi==0.115.6`, editable-installs `raif-format`
+(from `raif-standard/packages/py`) and `raif-vllm` (from `raif-lora/packages/vllm`),
+serves base + LoRA with `VLLM_PLUGINS=raif --reasoning-parser raif
+--enable-auto-tool-choice --tool-call-parser raif` and the tools-ignoring
+`--chat-template cuda/cloud/raif_llama32.jinja`, then runs
+`examples/smoke_plugin.py` across all five paths.
 
-```bash
-python3.12 -m vllm.entrypoints.openai.api_server \
-  --model unsloth/Llama-3.2-3B-Instruct \
-  --enable-lora --lora-modules raif=skrrt-sh/raif-llama-3.2-3b-lora \
-  --enable-auto-tool-choice --tool-call-parser raif \
-  --tool-parser-plugin src/raif_vllm.py \
-  --chat-template cuda/cloud/raif_llama32.jinja
-```
-
-Version pins (summary): `vllm==0.11.0`, `torch 2.8.0+cu128`,
-`transformers>=4.56,<5` (4.57.x), `python3.12`. Do not use the stock
-`cu1290` image's torch 2.9 / cu130 + transformers 5.x — it triggers the
-"driver too old (12090)" crash with vLLM 0.23.0 and the
-`all_special_tokens_extended` tokenizer error.
+The original 0.11 run pinned `vllm==0.11.0` + `transformers>=4.56,<5` and used the
+file-based `--tool-parser-plugin`; that path is superseded by the entry-point
+plugin above. v0.19 is the **last CUDA-12 vLLM** — newer vLLM ships cu130 torch
+and crashes on a CUDA-12 driver with "driver too old, found version 12090".
